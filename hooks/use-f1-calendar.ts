@@ -1,103 +1,52 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useMemo } from "react"
+import useSWR from "swr"
 import type { Race, Session } from "@/lib/types"
 import { loadF1CalendarData } from "@/lib/data"
 
-// Global cache to prevent multiple API calls
-let globalCache: {
-  data: Race[] | null
-  timestamp: number
-  promise: Promise<Race[]> | null
-} = {
-  data: null,
-  timestamp: 0,
-  promise: null
-}
-
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+// SWR fetcher function
+const fetcher = () => loadF1CalendarData()
 
 export function useF1Calendar(raceData?: Race[]) {
-  const [races, setRaces] = useState<Race[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const loadRaces = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-
-      // If raceData is provided, use it directly
-      if (raceData) {
-        setRaces(raceData)
-        return
-      }
-
-      // Check cache first
-      const now = Date.now()
-      if (globalCache.data && (now - globalCache.timestamp) < CACHE_DURATION) {
-        setRaces(globalCache.data)
-        return
-      }
-
-      // If there's already a pending request, wait for it
-      if (globalCache.promise) {
-        const data = await globalCache.promise
-        setRaces(data)
-        return
-      }
-
-      // Create new request
-      globalCache.promise = loadF1CalendarData()
-      const data = await globalCache.promise
-      
-      // Update cache
-      globalCache.data = data
-      globalCache.timestamp = now
-      globalCache.promise = null
-      
-      setRaces(data)
-    } catch (err) {
-      console.error("Error loading races:", err)
-      setError(err instanceof Error ? err.message : "Failed to load race calendar data")
-      globalCache.promise = null
-    } finally {
-      setLoading(false)
+  // Use SWR for caching and revalidation
+  const { data: races, error, isLoading, mutate } = useSWR<Race[]>(
+    raceData ? null : 'f1-calendar', // Skip if raceData provided
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      dedupingInterval: 5 * 60 * 1000, // 5 minutes
+      errorRetryCount: 3,
     }
-  }, [raceData])
+  )
 
-  useEffect(() => {
-    loadRaces()
-  }, [loadRaces])
+  const finalRaces = raceData || races || []
 
   // Memoized calculations to prevent unnecessary recalculations
   const raceStats = useMemo(() => {
-    const completed = races.filter(race => race.status === "completed").length
-    const upcoming = races.filter(race => race.status === "upcoming").length
-    const live = races.filter(race => race.status === "live").length
-    const totalCountries = new Set(races.map(race => race.country)).size
+    const completed = finalRaces.filter(race => race.status === "completed").length
+    const upcoming = finalRaces.filter(race => race.status === "upcoming").length
+    const live = finalRaces.filter(race => race.status === "live").length
+    const totalCountries = new Set(finalRaces.map(race => race.country)).size
 
     return {
       completedRaces: completed,
       upcomingRaces: upcoming,
       liveRaces: live,
       totalCountries,
-      totalRaces: races.length
+      totalRaces: finalRaces.length
     }
-  }, [races])
+  }, [finalRaces])
 
-  const retry = useCallback(() => {
-    // Clear cache and retry
-    globalCache.data = null
-    globalCache.timestamp = 0
-    globalCache.promise = null
-    loadRaces()
-  }, [loadRaces])
+  const retry = () => {
+    mutate() // Re-fetch data
+  }
 
   return {
-    races,
-    loading,
-    error,
+    races: finalRaces,
+    loading: isLoading,
+    error: error?.message || null,
     retry,
     ...raceStats
   }
