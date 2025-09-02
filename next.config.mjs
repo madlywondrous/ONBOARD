@@ -22,17 +22,31 @@ const nextConfig = {
   
   // Bundle analyzer (enable with ANALYZE=true)
   ...(process.env.ANALYZE === 'true' && {
-    webpack: (config) => {
+    webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
       const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer')
       config.plugins.push(
         new BundleAnalyzerPlugin({
           analyzerMode: 'static',
           openAnalyzer: false,
+          reportFilename: './analyze/client.html',
         })
       )
       return config
     },
   }),
+
+  // Experimental features for performance
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    turbo: {
+      rules: {
+        '*.svg': {
+          loaders: ['@svgr/webpack'],
+          as: '*.js',
+        },
+      },
+    },
+  },
 
   // Environment-specific configurations
   ...(process.env.NODE_ENV === 'production' && {
