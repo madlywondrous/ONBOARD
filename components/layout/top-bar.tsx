@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Bell, RefreshCw } from "lucide-react"
-import Image from "next/image"
 import { useState } from "react"
 import { useF1Season } from "@/hooks/use-f1-season"
 
@@ -60,7 +59,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
           className="hover:bg-transparent p-1"
           aria-label="Toggle navigation sidebar"
         >
-          <Image
+          <img
             src="/icons/sidebar.png"
             alt="Toggle Sidebar"
             width={28}
