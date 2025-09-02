@@ -39,6 +39,13 @@ function SectionSkeleton() {
   )
 }
 
+// Error fallback components
+const CalendarErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Calendar" />
+const DriversErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Drivers" />
+const TeamsErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Teams" />
+const StandingsErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Standings" />
+const StatisticsErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Statistics" />
+
 // Error fallback component
 function SectionErrorFallback({ error, section }: { error: Error; section: string }) {
   return (
@@ -67,7 +74,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
     switch (activeSection) {
       case "calendar":
         return (
-          <ErrorBoundary fallback={(error) => <SectionErrorFallback error={error} section="Calendar" />}>
+          <ErrorBoundary fallback={CalendarErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <CalendarSection />
             </Suspense>
@@ -75,7 +82,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
         )
       case "drivers":
         return (
-          <ErrorBoundary fallback={(error) => <SectionErrorFallback error={error} section="Drivers" />}>
+          <ErrorBoundary fallback={DriversErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <DriversSection />
             </Suspense>
@@ -83,7 +90,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
         )
       case "teams":
         return (
-          <ErrorBoundary fallback={(error) => <SectionErrorFallback error={error} section="Teams" />}>
+          <ErrorBoundary fallback={TeamsErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <TeamsSection />
             </Suspense>
@@ -91,7 +98,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
         )
       case "standings":
         return (
-          <ErrorBoundary fallback={(error) => <SectionErrorFallback error={error} section="Standings" />}>
+          <ErrorBoundary fallback={StandingsErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <StandingsSection />
             </Suspense>
@@ -99,7 +106,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
         )
       case "statistics":
         return (
-          <ErrorBoundary fallback={(error) => <SectionErrorFallback error={error} section="Statistics" />}>
+          <ErrorBoundary fallback={StatisticsErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <StatisticsSection />
             </Suspense>
@@ -111,7 +118,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
   }
 
   return (
-    <div className="flex-1 min-w-0 min-h-0 overflow-auto bg-black p-3 sm:p-6" style={{ overscrollBehavior: 'none' }}>
+    <div id="main-content" className="flex-1 min-w-0 min-h-0 overflow-auto bg-black p-3 sm:p-6" style={{ overscrollBehavior: 'none' }}>
       {renderSection()}
     </div>
   )

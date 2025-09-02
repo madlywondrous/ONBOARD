@@ -58,7 +58,7 @@ function DashboardLayoutInner() {
         {isHydrated && activeSection ? (
           <DashboardContent activeSection={activeSection} />
         ) : (
-          <div className="flex-1 min-w-0 min-h-0 overflow-auto bg-black p-6 flex items-center justify-center">
+          <div id="main-content" className="flex-1 min-w-0 min-h-0 overflow-auto bg-black p-6 flex items-center justify-center">
             <div className="animate-pulse">
               <div className="text-neutral-400 text-lg">Loading dashboard...</div>
               <div className="text-neutral-600 text-sm mt-2">Initializing F1 experience</div>

@@ -58,6 +58,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
           size="icon"
           onClick={onToggleSidebar}
           className="hover:bg-transparent p-1"
+          aria-label="Toggle navigation sidebar"
         >
           <Image
             src="/icons/sidebar.png"
@@ -74,7 +75,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
       </div>
       <div className="flex items-center gap-1 sm:gap-2">
         {/* Notification Button */}
-        <Card className="bg-neutral-700/50 border-neutral-600 hover:bg-neutral-600/50 transition-colors cursor-pointer">
+        <Card className="bg-neutral-700/50 border-neutral-600 hover:bg-neutral-600/50 transition-colors cursor-pointer" role="button" aria-label="View notifications" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.preventDefault(); /* Add notification logic */ }}>
           <CardContent className="px-2 py-2 flex items-center justify-center min-w-8 sm:min-w-10 h-8">
             <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" />
           </CardContent>
@@ -86,6 +87,10 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
             isRefreshing ? 'w-auto px-1' : 'w-8 sm:w-10'
           }`}
           onClick={handleRefresh}
+          role="button"
+          aria-label={isRefreshing ? "Refreshing data" : "Refresh data"}
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleRefresh(); } }}
         >
           <CardContent className="px-2 py-2 flex items-center justify-center h-8 min-w-4 sm:min-w-6">
             <div className="flex items-center gap-2 whitespace-nowrap">
@@ -106,6 +111,10 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
         {/* Status Button - Responsive */}
         <Card 
           className="bg-neutral-700/50 border-neutral-600 hover:bg-neutral-600/50 transition-colors cursor-pointer px-1 sm:px-2"
+          role="button"
+          aria-label={`Season status: ${seasonStatus.message}`}
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.preventDefault(); /* Add status logic */ }}
         >
           <CardContent className="px-1 py-2 flex items-center justify-center h-8 min-w-4 sm:min-w-6">
             <div className="flex items-center gap-1 sm:gap-2 whitespace-nowrap">

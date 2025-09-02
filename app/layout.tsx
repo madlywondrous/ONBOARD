@@ -47,6 +47,7 @@ export default function RootLayout({
         <link rel="shortcut icon" href="/Onboard.svg" />
       </head>
       <body className={`${tomorrow.variable} ${geistMono.variable} bg-black text-white antialiased`}>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-red-500 text-white px-4 py-2 rounded z-50">Skip to main content</a>
         <Providers>
           {children}
         </Providers>
