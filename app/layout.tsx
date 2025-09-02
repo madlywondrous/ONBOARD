@@ -3,8 +3,7 @@ import type { Metadata } from "next"
 import localFont from "next/font/local"
 import { Tomorrow } from "next/font/google"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { ErrorBoundary } from "@/components/error-boundary"
+import { Providers } from "@/components/providers"
 
 const geistMono = localFont({
   src: [
@@ -48,16 +47,9 @@ export default function RootLayout({
         <link rel="shortcut icon" href="/Onboard.svg" />
       </head>
       <body className={`${tomorrow.variable} ${geistMono.variable} bg-black text-white antialiased`}>
-        <ErrorBoundary>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            enableSystem
-            disableTransitionOnChange
-          >
-            {children}
-          </ThemeProvider>
-        </ErrorBoundary>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )
