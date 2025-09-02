@@ -1,0 +1,7 @@
+/* F1 Calendar specific styles - Add to your global CSS */
+
+/* Ensure dark theme for F1 Calendar */
+.f1-calendar {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}

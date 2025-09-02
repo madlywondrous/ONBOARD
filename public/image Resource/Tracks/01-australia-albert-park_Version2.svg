@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" fill="none">
+  <path
+    d="M200 600 L260 520 Q280 490 330 480 L450 470 Q510 465 540 430 L580 380 Q610 350 660 350 L780 355 Q830 360 860 390 L900 430 Q920 455 910 490 L890 560 Q880 595 840 610 L740 650 Q700 665 660 655 L560 630 Q520 620 480 635 L380 675 Q340 690 300 680 L230 660 Q200 650 200 600 Z"
+    stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

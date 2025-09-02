@@ -1,0 +1,965 @@
+{
+  "season": 2025,
+  "races": [
+    {
+      "round": 1,
+      "raceName": "Australian Grand Prix",
+      "circuit": {
+        "name": "Albert Park Circuit",
+        "location": {
+          "city": "Melbourne",
+          "country": "Australia",
+          "countryCode": "AU"
+        }
+      },
+      "date": "2025-03-16",
+      "sessions": {
+        "practice1": {
+          "date": "2025-03-14",
+          "time": "10:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-03-14",
+          "time": "14:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-03-15",
+          "time": "10:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-03-15",
+          "time": "14:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-03-16",
+          "time": "10:30",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 2,
+      "raceName": "Chinese Grand Prix",
+      "circuit": {
+        "name": "Shanghai International Circuit",
+        "location": {
+          "city": "Shanghai",
+          "country": "China",
+          "countryCode": "CN"
+        }
+      },
+      "date": "2025-03-23",
+      "sessions": {
+        "practice1": {
+          "date": "2025-03-21",
+          "time": "12:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-03-21",
+          "time": "16:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-03-22",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-03-22",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-03-23",
+          "time": "12:30",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 3,
+      "raceName": "Japanese Grand Prix",
+      "circuit": {
+        "name": "Suzuka International Racing Course",
+        "location": {
+          "city": "Suzuka",
+          "country": "Japan",
+          "countryCode": "JP"
+        }
+      },
+      "date": "2025-04-06",
+      "sessions": {
+        "practice1": {
+          "date": "2025-04-04",
+          "time": "11:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-04-04",
+          "time": "15:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-04-05",
+          "time": "11:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-04-05",
+          "time": "15:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-04-06",
+          "time": "11:30",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 4,
+      "raceName": "Bahrain Grand Prix",
+      "circuit": {
+        "name": "Bahrain International Circuit",
+        "location": {
+          "city": "Sakhir",
+          "country": "Bahrain",
+          "countryCode": "BH"
+        }
+      },
+      "date": "2025-04-13",
+      "sessions": {
+        "practice1": {
+          "date": "2025-04-11",
+          "time": "15:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-04-11",
+          "time": "19:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-04-12",
+          "time": "16:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-04-12",
+          "time": "20:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-04-13",
+          "time": "18:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 5,
+      "raceName": "Saudi Arabian Grand Prix",
+      "circuit": {
+        "name": "Jeddah Corniche Circuit",
+        "location": {
+          "city": "Jeddah",
+          "country": "Saudi Arabia",
+          "countryCode": "SA"
+        }
+      },
+      "date": "2025-04-27",
+      "sessions": {
+        "practice1": {
+          "date": "2025-04-25",
+          "time": "17:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-04-25",
+          "time": "21:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-04-26",
+          "time": "17:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-04-26",
+          "time": "21:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-04-27",
+          "time": "20:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 6,
+      "raceName": "Miami Grand Prix",
+      "circuit": {
+        "name": "Miami International Autodrome",
+        "location": {
+          "city": "Miami",
+          "country": "United States",
+          "countryCode": "US"
+        }
+      },
+      "date": "2025-05-04",
+      "sessions": {
+        "practice1": {
+          "date": "2025-05-02",
+          "time": "20:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-05-03",
+          "time": "00:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-05-03",
+          "time": "19:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-05-03",
+          "time": "23:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-05-04",
+          "time": "22:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 7,
+      "raceName": "Emilia Romagna Grand Prix",
+      "circuit": {
+        "name": "Autodromo Enzo e Dino Ferrari",
+        "location": {
+          "city": "Imola",
+          "country": "Italy",
+          "countryCode": "IT"
+        }
+      },
+      "date": "2025-05-18",
+      "sessions": {
+        "practice1": {
+          "date": "2025-05-16",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-05-16",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-05-17",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-05-17",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-05-18",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 8,
+      "raceName": "Monaco Grand Prix",
+      "circuit": {
+        "name": "Circuit de Monaco",
+        "location": {
+          "city": "Monte Carlo",
+          "country": "Monaco",
+          "countryCode": "MC"
+        }
+      },
+      "date": "2025-05-25",
+      "sessions": {
+        "practice1": {
+          "date": "2025-05-23",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-05-23",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-05-24",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-05-24",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-05-25",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 9,
+      "raceName": "Spanish Grand Prix",
+      "circuit": {
+        "name": "Circuit de Barcelona-Catalunya",
+        "location": {
+          "city": "Barcelona",
+          "country": "Spain",
+          "countryCode": "ES"
+        }
+      },
+      "date": "2025-06-01",
+      "sessions": {
+        "practice1": {
+          "date": "2025-05-30",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-05-30",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-05-31",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-05-31",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-06-01",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 10,
+      "raceName": "Canadian Grand Prix",
+      "circuit": {
+        "name": "Circuit Gilles Villeneuve",
+        "location": {
+          "city": "Montreal",
+          "country": "Canada",
+          "countryCode": "CA"
+        }
+      },
+      "date": "2025-06-15",
+      "sessions": {
+        "practice1": {
+          "date": "2025-06-13",
+          "time": "19:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-06-13",
+          "time": "23:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-06-14",
+          "time": "18:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-06-14",
+          "time": "22:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-06-15",
+          "time": "20:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 11,
+      "raceName": "Austrian Grand Prix",
+      "circuit": {
+        "name": "Red Bull Ring",
+        "location": {
+          "city": "Spielberg",
+          "country": "Austria",
+          "countryCode": "AT"
+        }
+      },
+      "date": "2025-06-29",
+      "sessions": {
+        "practice1": {
+          "date": "2025-06-27",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-06-27",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-06-28",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-06-28",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-06-29",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 12,
+      "raceName": "British Grand Prix",
+      "circuit": {
+        "name": "Silverstone Circuit",
+        "location": {
+          "city": "Silverstone",
+          "country": "United Kingdom",
+          "countryCode": "GB"
+        }
+      },
+      "date": "2025-07-06",
+      "sessions": {
+        "practice1": {
+          "date": "2025-07-04",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-07-04",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-07-05",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-07-05",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-07-06",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 13,
+      "raceName": "Hungarian Grand Prix",
+      "circuit": {
+        "name": "Hungaroring",
+        "location": {
+          "city": "Budapest",
+          "country": "Hungary",
+          "countryCode": "HU"
+        }
+      },
+      "date": "2025-07-20",
+      "sessions": {
+        "practice1": {
+          "date": "2025-07-18",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-07-18",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-07-19",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-07-19",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-07-20",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 14,
+      "raceName": "Belgian Grand Prix",
+      "circuit": {
+        "name": "Circuit de Spa-Francorchamps",
+        "location": {
+          "city": "Spa",
+          "country": "Belgium",
+          "countryCode": "BE"
+        }
+      },
+      "date": "2025-07-27",
+      "sessions": {
+        "practice1": {
+          "date": "2025-07-25",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-07-25",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-07-26",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-07-26",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-07-27",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 15,
+      "raceName": "Dutch Grand Prix",
+      "circuit": {
+        "name": "Circuit Zandvoort",
+        "location": {
+          "city": "Zandvoort",
+          "country": "Netherlands",
+          "countryCode": "NL"
+        }
+      },
+      "date": "2025-08-31",
+      "sessions": {
+        "practice1": {
+          "date": "2025-08-29",
+          "time": "12:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-08-29",
+          "time": "16:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-08-30",
+          "time": "11:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-08-30",
+          "time": "15:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-08-31",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 16,
+      "raceName": "Italian Grand Prix",
+      "circuit": {
+        "name": "Autodromo Nazionale di Monza",
+        "location": {
+          "city": "Monza",
+          "country": "Italy",
+          "countryCode": "IT"
+        }
+      },
+      "date": "2025-09-07",
+      "sessions": {
+        "practice1": {
+          "date": "2025-09-05",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-09-05",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-09-06",
+          "time": "12:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-09-06",
+          "time": "16:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-09-07",
+          "time": "15:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 17,
+      "raceName": "Azerbaijan Grand Prix",
+      "circuit": {
+        "name": "Baku City Circuit",
+        "location": {
+          "city": "Baku",
+          "country": "Azerbaijan",
+          "countryCode": "AZ"
+        }
+      },
+      "date": "2025-09-21",
+      "sessions": {
+        "practice1": {
+          "date": "2025-09-19",
+          "time": "11:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-09-19",
+          "time": "15:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-09-20",
+          "time": "10:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-09-20",
+          "time": "14:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-09-21",
+          "time": "13:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 18,
+      "raceName": "Singapore Grand Prix",
+      "circuit": {
+        "name": "Marina Bay Street Circuit",
+        "location": {
+          "city": "Singapore",
+          "country": "Singapore",
+          "countryCode": "SG"
+        }
+      },
+      "date": "2025-10-05",
+      "sessions": {
+        "practice1": {
+          "date": "2025-10-03",
+          "time": "17:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-10-03",
+          "time": "21:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-10-04",
+          "time": "17:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-10-04",
+          "time": "21:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-10-05",
+          "time": "20:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 19,
+      "raceName": "United States Grand Prix",
+      "circuit": {
+        "name": "Circuit of the Americas",
+        "location": {
+          "city": "Austin",
+          "country": "United States",
+          "countryCode": "US"
+        }
+      },
+      "date": "2025-10-19",
+      "sessions": {
+        "practice1": {
+          "date": "2025-10-17",
+          "time": "19:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-10-17",
+          "time": "23:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-10-18",
+          "time": "18:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-10-18",
+          "time": "22:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-10-19",
+          "time": "21:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 20,
+      "raceName": "Mexican Grand Prix",
+      "circuit": {
+        "name": "Autodromo Hermanos Rodriguez",
+        "location": {
+          "city": "Mexico City",
+          "country": "Mexico",
+          "countryCode": "MX"
+        }
+      },
+      "date": "2025-10-26",
+      "sessions": {
+        "practice1": {
+          "date": "2025-10-24",
+          "time": "20:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-10-25",
+          "time": "00:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-10-25",
+          "time": "19:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-10-25",
+          "time": "23:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-10-26",
+          "time": "22:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 21,
+      "raceName": "Brazilian Grand Prix",
+      "circuit": {
+        "name": "Autodromo Jose Carlos Pace",
+        "location": {
+          "city": "Sao Paulo",
+          "country": "Brazil",
+          "countryCode": "BR"
+        }
+      },
+      "date": "2025-11-09",
+      "sessions": {
+        "practice1": {
+          "date": "2025-11-07",
+          "time": "15:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-11-07",
+          "time": "19:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-11-08",
+          "time": "15:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-11-08",
+          "time": "19:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-11-09",
+          "time": "18:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 22,
+      "raceName": "Las Vegas Grand Prix",
+      "circuit": {
+        "name": "Las Vegas Strip Circuit",
+        "location": {
+          "city": "Las Vegas",
+          "country": "United States",
+          "countryCode": "US"
+        }
+      },
+      "date": "2025-11-22",
+      "sessions": {
+        "practice1": {
+          "date": "2025-11-20",
+          "time": "20:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-11-21",
+          "time": "00:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-11-21",
+          "time": "20:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-11-22",
+          "time": "00:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-11-22",
+          "time": "22:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 23,
+      "raceName": "Qatar Grand Prix",
+      "circuit": {
+        "name": "Lusail International Circuit",
+        "location": {
+          "city": "Lusail",
+          "country": "Qatar",
+          "countryCode": "QA"
+        }
+      },
+      "date": "2025-11-30",
+      "sessions": {
+        "practice1": {
+          "date": "2025-11-28",
+          "time": "14:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-11-28",
+          "time": "18:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-11-29",
+          "time": "15:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-11-29",
+          "time": "19:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-11-30",
+          "time": "17:00",
+          "duration": 120
+        }
+      }
+    },
+    {
+      "round": 24,
+      "raceName": "Abu Dhabi Grand Prix",
+      "circuit": {
+        "name": "Yas Marina Circuit",
+        "location": {
+          "city": "Abu Dhabi",
+          "country": "United Arab Emirates",
+          "countryCode": "AE"
+        }
+      },
+      "date": "2025-12-07",
+      "sessions": {
+        "practice1": {
+          "date": "2025-12-05",
+          "time": "13:30",
+          "duration": 90
+        },
+        "practice2": {
+          "date": "2025-12-05",
+          "time": "17:00",
+          "duration": 90
+        },
+        "practice3": {
+          "date": "2025-12-06",
+          "time": "14:30",
+          "duration": 60
+        },
+        "qualifying": {
+          "date": "2025-12-06",
+          "time": "18:00",
+          "duration": 60
+        },
+        "race": {
+          "date": "2025-12-07",
+          "time": "17:00",
+          "duration": 120
+        }
+      }
+    }
+  ]
+}
