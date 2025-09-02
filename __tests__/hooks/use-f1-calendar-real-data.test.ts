@@ -3,13 +3,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { useF1Calendar } from '../../hooks/use-f1-calendar'
 
 // Mock the data loader to avoid loading the large JSON file in tests
-vi.mock('../../lib/f1-calendar-data', async () => {
-  const originalModule = await vi.importActual('../../lib/f1-calendar-data')
+vi.mock('../../lib/data', async () => {
+  const originalModule = await vi.importActual('../../lib/data')
   return {
     ...originalModule,
     loadF1CalendarData: () => Promise.resolve([]), // Return an empty array for this test
-    getCurrentOrNextSession: () => null,
-    getCountdownString: () => '',
   }
 })
 

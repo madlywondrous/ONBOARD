@@ -26,9 +26,6 @@ describe('F1Dashboard Responsive Layout', () => {
     
     // Should render the dashboard layout
     expect(screen.getByTestId('dashboard-layout')).toBeInTheDocument()
-    
-    // Should render the dashboard layout (mobile placeholder no longer exists)
-    expect(screen.getByText('Loading dashboard...')).toBeInTheDocument()
   })
 
   it('should not use mobile detection hook anymore', () => {

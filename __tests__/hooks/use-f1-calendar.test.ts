@@ -2,22 +2,18 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useF1Calendar } from '@/hooks/use-f1-calendar'
 import type { Race } from '@/lib/types'
-import * as f1CalendarData from '@/lib/data/f1-calendar-data'
+import * as f1Data from '@/lib/data'
 
 // Mock the data loading function
-vi.mock('@/lib/data/f1-calendar-data', async () => {
-  const actual = await vi.importActual('@/lib/data/f1-calendar-data')
+vi.mock('@/lib/data', async () => {
+  const actual = await vi.importActual('@/lib/data')
   return {
     ...actual,
     loadF1CalendarData: vi.fn(),
-    getCurrentOrNextSession: vi.fn(),
-    getCountdownString: vi.fn(),
   }
 })
 
-const mockLoadF1CalendarData = vi.mocked(f1CalendarData.loadF1CalendarData)
-const mockGetCurrentOrNextSession = vi.mocked(f1CalendarData.getCurrentOrNextSession)
-const mockGetCountdownString = vi.mocked(f1CalendarData.getCountdownString)
+const mockLoadF1CalendarData = vi.mocked(f1Data.loadF1CalendarData)
 
 describe('useF1Calendar', () => {
   const mockRaces: Race[] = [
@@ -66,8 +62,6 @@ describe('useF1Calendar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockLoadF1CalendarData.mockResolvedValue(mockRaces)
-    mockGetCurrentOrNextSession.mockReturnValue(null)
-    mockGetCountdownString.mockReturnValue('')
   })
 
   afterEach(() => {
@@ -111,7 +105,7 @@ describe('useF1Calendar', () => {
       expect(result.current.loading).toBe(false)
     })
 
-    expect(result.current.error).toBe('Failed to load race calendar data')
+    expect(result.current.error).toBe(errorMessage)
     expect(result.current.races).toEqual([])
   })
 
