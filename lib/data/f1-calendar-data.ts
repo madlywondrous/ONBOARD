@@ -1,4 +1,5 @@
 import { F1CalendarData, F1RaceData, Race, RaceStatus, Session } from '@/lib/types'
+import { validateRace } from '@/lib/validation'
 
 /**
  * Transform F1 calendar JSON data to Race interface format
@@ -13,7 +14,7 @@ export function transformRaceData(jsonData: F1CalendarData): Race[] {
 function transformSingleRace(raceData: F1RaceData): Race {
   const raceId = generateRaceId(raceData.raceName, raceData.round)
   
-  return {
+  const race: Race = {
     id: raceId,
     name: raceData.raceName,
     circuit: raceData.circuit.name,
@@ -27,6 +28,9 @@ function transformSingleRace(raceData: F1RaceData): Race {
     circuitUrl: createCircuitUrl(raceData.circuit.name),
     sessions: transformSessions(raceData.sessions)
   }
+
+  // Validate the transformed race data
+  return validateRace(race)
 }
 
 /**
