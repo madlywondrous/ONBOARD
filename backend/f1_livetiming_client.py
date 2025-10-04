@@ -39,6 +39,8 @@ class F1LiveTimingClient:
         self.session_data = {}
         self.lap_count = {}
         self.car_data = {}
+        self.timing_app_data = {}  # Tyres, DRS, etc.
+        self.timing_stats = {}  # Additional timing statistics
         
         # Callbacks
         self.callbacks: Dict[str, list] = {}
@@ -134,6 +136,14 @@ class F1LiveTimingClient:
             elif topic == "CarData.z":
                 self.car_data = data
                 self._trigger_callbacks('car_data', data)
+                
+            elif topic == "TimingAppData":
+                self.timing_app_data = data
+                self._trigger_callbacks('timing_app', data)
+                
+            elif topic == "TimingStats":
+                self.timing_stats = data
+                self._trigger_callbacks('timing_stats', data)
                 
             logger.debug(f"Processed {topic} data")
             
@@ -288,6 +298,18 @@ class F1LiveTimingClient:
             "session_data": self.session_data,
             "lap_count": self.lap_count
         }
+    
+    async def get_timing_app_data(self):
+        """Get timing app data (tyres, DRS, etc.)"""
+        return self.timing_app_data
+    
+    async def get_timing_stats(self):
+        """Get timing statistics"""
+        return self.timing_stats
+    
+    async def get_car_data(self):
+        """Get car telemetry data"""
+        return self.car_data
 
 
 # Global client instance

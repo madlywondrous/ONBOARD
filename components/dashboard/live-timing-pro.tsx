@@ -58,6 +58,16 @@ interface TimingLine {
   }>
 }
 
+interface TimingAppLine {
+  RacingNumber: string
+  Stints?: Array<{
+    Compound: string
+    New: string
+    TotalLaps: number
+    LapNumber: number
+  }>
+}
+
 interface Driver {
   driver_number: number
   full_name: string
@@ -85,6 +95,7 @@ export function LiveTimingPro() {
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null)
   const [timingLines, setTimingLines] = useState<TimingLine[]>([])
   const [drivers, setDrivers] = useState<{ [key: string]: Driver }>({})
+  const [tyreData, setTyreData] = useState<{ [key: string]: TimingAppLine }>({})
   const [loading, setLoading] = useState(true)
   const [isLive, setIsLive] = useState(true)
   const [recordings, setRecordings] = useState<RecordingInfo[]>([])
@@ -147,6 +158,17 @@ export function LiveTimingPro() {
         })
         setTimingLines(sortedLines)
       }
+
+      // Fetch tyre data
+      const tyreRes = await fetch(`${API_BASE_URL}/api/live/timing-app`)
+      const tyreDataRes = await tyreRes.json()
+      if (tyreDataRes.Lines) {
+        const tyreMap: { [key: string]: TimingAppLine } = {}
+        Object.entries(tyreDataRes.Lines).forEach(([key, value]) => {
+          tyreMap[key] = value as TimingAppLine
+        })
+        setTyreData(tyreMap)
+      }
     } catch (error) {
       console.error("Failed to fetch live data:", error)
     }
@@ -195,6 +217,42 @@ export function LiveTimingPro() {
     if (sector.PersonalFastest) return "#00FF00" // Green
     if (sector.Status === 2048) return "#FFFFFF" // White
     return "#FFFFFF"
+  }
+
+  const getTyreColor = (compound: string): string => {
+    switch (compound?.toUpperCase()) {
+      case "SOFT": return "#FF0000"
+      case "MEDIUM": return "#FFD700"
+      case "HARD": return "#FFFFFF"
+      case "INTERMEDIATE": return "#00FF00"
+      case "WET": return "#0000FF"
+      default: return "#888888"
+    }
+  }
+
+  const getTyreLabel = (compound: string): string => {
+    switch (compound?.toUpperCase()) {
+      case "SOFT": return "S"
+      case "MEDIUM": return "M"
+      case "HARD": return "H"
+      case "INTERMEDIATE": return "I"
+      case "WET": return "W"
+      default: return "?"
+    }
+  }
+
+  const getCurrentTyre = (racingNumber: string): { compound: string; isNew: boolean; laps: number } | null => {
+    const driverTyreData = tyreData[racingNumber]
+    if (!driverTyreData?.Stints || driverTyreData.Stints.length === 0) {
+      return null
+    }
+    // Get the last stint (current tyres)
+    const currentStint = driverTyreData.Stints[driverTyreData.Stints.length - 1]
+    return {
+      compound: currentStint.Compound,
+      isNew: currentStint.New === "true",
+      laps: currentStint.TotalLaps || 0
+    }
   }
 
   if (loading) {
@@ -256,10 +314,11 @@ export function LiveTimingPro() {
       {/* Timing Tower */}
       <div className="space-y-[2px]">
         {/* Header Row */}
-        <div className="bg-neutral-900 grid grid-cols-[60px_80px_100px_1fr_1fr_1fr_120px_100px] gap-2 px-3 py-2 text-xs font-bold text-neutral-400 border-b border-neutral-700">
+        <div className="bg-neutral-900 grid grid-cols-[60px_80px_100px_60px_1fr_1fr_1fr_120px_100px] gap-2 px-3 py-2 text-xs font-bold text-neutral-400 border-b border-neutral-700">
           <div>POS</div>
           <div>NO</div>
           <div>DRIVER</div>
+          <div className="text-center">TYRE</div>
           <div className="text-center">SECTOR 1</div>
           <div className="text-center">SECTOR 2</div>
           <div className="text-center">SECTOR 3</div>
@@ -271,11 +330,12 @@ export function LiveTimingPro() {
         {timingLines.map((line) => {
           const driver = drivers[line.RacingNumber]
           const teamColor = driver?.team_colour || "FFFFFF"
+          const currentTyre = getCurrentTyre(line.RacingNumber)
           
           return (
             <div
               key={line.RacingNumber}
-              className="bg-neutral-900/50 hover:bg-neutral-800/70 grid grid-cols-[60px_80px_100px_1fr_1fr_1fr_120px_100px] gap-2 px-3 py-3 items-center border-l-4 transition-colors"
+              className="bg-neutral-900/50 hover:bg-neutral-800/70 grid grid-cols-[60px_80px_100px_60px_1fr_1fr_1fr_120px_100px] gap-2 px-3 py-3 items-center border-l-4 transition-colors"
               style={{ borderLeftColor: `#${teamColor}` }}
             >
               {/* Position */}
@@ -300,6 +360,31 @@ export function LiveTimingPro() {
                   <Badge variant="outline" className="ml-2 text-xs border-yellow-500 text-yellow-500">
                     PIT
                   </Badge>
+                )}
+              </div>
+
+              {/* Tyre Info */}
+              <div className="flex flex-col items-center gap-1">
+                {currentTyre ? (
+                  <>
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border-2"
+                      style={{ 
+                        borderColor: getTyreColor(currentTyre.compound),
+                        color: getTyreColor(currentTyre.compound)
+                      }}
+                    >
+                      {getTyreLabel(currentTyre.compound)}
+                    </div>
+                    <div className="text-[10px] text-neutral-500">
+                      {currentTyre.laps}L
+                      {currentTyre.isNew && <span className="text-green-500 ml-1">●</span>}
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-8 h-8 rounded-full border-2 border-neutral-700 flex items-center justify-center text-neutral-600 text-xs">
+                    ?
+                  </div>
                 )}
               </div>
 

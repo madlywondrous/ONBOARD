@@ -293,6 +293,30 @@ async def get_race_control_messages():
         return []
 
 
+@app.get("/api/live/timing-app")
+async def get_timing_app_data():
+    """Get timing app data (tyres, DRS, etc.)"""
+    try:
+        data = await f1_client.get_timing_app_data()
+        return data if data else {}
+        
+    except Exception as e:
+        logger.error(f"Error getting timing app data: {e}")
+        return {}
+
+
+@app.get("/api/live/car-data")
+async def get_car_data():
+    """Get car telemetry data"""
+    try:
+        data = await f1_client.get_car_data()
+        return data if data else {}
+        
+    except Exception as e:
+        logger.error(f"Error getting car data: {e}")
+        return {}
+
+
 # ===== DRIVERS ENDPOINTS =====
 
 @app.get("/api/drivers")
