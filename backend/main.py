@@ -1,52 +1,134 @@
 """
 ONBOARD F1 Dashboard - Backend API
-FastAPI server for live timing, race data, and analytics
+FastAPI server for live timing using Official F1 Live Timing API
 """
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-import httpx
 import asyncio
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 from dotenv import load_dotenv
+from mock_data import MOCK_DRIVERS, MOCK_TEAMS
+from f1_livetiming_client import f1_client
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 # Configuration
 API_VERSION = os.getenv("API_VERSION", "v1")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
-OPENF1_API_URL = os.getenv("OPENF1_API_URL", "https://api.openf1.org/v1")
+F1_LIVETIMING_BASE = "https://livetiming.formula1.com"
 
 # Cache for storing live data
 live_data_cache: Dict[str, Any] = {}
 active_connections: List[WebSocket] = []
 
 
+async def update_live_cache():
+    """Update live data cache from F1 API"""
+    try:
+        # Get session info
+        session_info = await f1_client.get_session_info()
+        if session_info:
+            live_data_cache['session'] = session_info
+        
+        # Get timing data
+        timing = await f1_client.get_timing_data()
+        if timing:
+            live_data_cache['timing'] = timing
+        
+        # Get positions
+        positions = await f1_client.get_position_data()
+        if positions:
+            live_data_cache['positions'] = positions
+        
+        # Get weather
+        weather = await f1_client.get_weather_data()
+        if weather:
+            live_data_cache['weather'] = weather
+        
+        # Get driver list
+        drivers = await f1_client.get_driver_list()
+        if drivers:
+            live_data_cache['drivers'] = drivers
+        
+        # Get race control messages
+        messages = await f1_client.get_race_control_messages()
+        if messages:
+            live_data_cache['race_control'] = messages
+        
+        # Get track status
+        track_status = await f1_client.get_track_status()
+        if track_status:
+            live_data_cache['track_status'] = track_status
+        
+        live_data_cache['last_update'] = datetime.utcnow().isoformat()
+        
+    except Exception as e:
+        logger.error(f"Error updating live cache: {e}")
+
+
+async def poll_live_data():
+    """Background task to poll F1 Live Timing"""
+    while True:
+        try:
+            await update_live_cache()
+            
+            # Notify WebSocket clients
+            if active_connections:
+                message = {
+                    "type": "update",
+                    "data": live_data_cache,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                for connection in active_connections:
+                    try:
+                        await connection.send_json(message)
+                    except:
+                        active_connections.remove(connection)
+        
+        except Exception as e:
+            logger.error(f"Error in poll loop: {e}")
+        
+        await asyncio.sleep(1)  # Update every second for real-time data
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
-    print("🏎️  ONBOARD F1 Backend starting...")
-    print(f"📡 OpenF1 API: {OPENF1_API_URL}")
-    print(f"🔗 CORS Origins: {CORS_ORIGINS}")
+    """Application lifespan - startup and shutdown"""
+    # Startup
+    logger.info("🏎️  ONBOARD F1 Backend starting...")
+    logger.info(f"📡 F1 Live Timing: {F1_LIVETIMING_BASE}")
+    logger.info(f"🔗 CORS Origins: {CORS_ORIGINS}")
     
-    # Start background task for live data updates
-    task = asyncio.create_task(update_live_data_loop())
+    # Connect to F1 Live Timing
+    await f1_client.connect()
+    
+    # Start background task for polling live data
+    task = asyncio.create_task(poll_live_data())
     
     yield
     
-    # Cleanup
+    # Shutdown
+    logger.info("🏁 ONBOARD F1 Backend shutting down...")
     task.cancel()
-    print("🏁 ONBOARD F1 Backend shutting down...")
+    f1_client.disconnect()
 
 
+# Initialize FastAPI app
 app = FastAPI(
     title="ONBOARD F1 Dashboard API",
-    description="Backend API for F1 live timing, race data, and analytics",
-    version="1.0.0",
+    description="Real-time F1 live timing and race data using Official F1 API",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -60,13 +142,6 @@ app.add_middleware(
 )
 
 
-# HTTP Client
-async def get_http_client():
-    """Get async HTTP client"""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        yield client
-
-
 # ===== API ENDPOINTS =====
 
 @app.get("/")
@@ -74,8 +149,9 @@ async def root():
     """Root endpoint"""
     return {
         "message": "ONBOARD F1 Dashboard API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "running",
+        "data_source": "Official F1 Live Timing",
         "docs": "/docs"
     }
 
@@ -86,7 +162,8 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "cache_size": len(live_data_cache)
+        "cache_size": len(live_data_cache),
+        "f1_connected": f1_client.connected
     }
 
 
@@ -94,170 +171,168 @@ async def health_check():
 
 @app.get("/api/live/session")
 async def get_live_session():
-    """Get current/next live session info"""
+    """Get current session info"""
     try:
-        async with httpx.AsyncClient() as client:
-            # Get latest session
-            response = await client.get(
-                f"{OPENF1_API_URL}/sessions",
-                params={"year": 2025}
-            )
-            response.raise_for_status()
-            sessions = response.json()
-            
-            # Find current or next session
-            now = datetime.utcnow()
-            for session in sessions:
-                session_start = datetime.fromisoformat(session['date_start'].replace('Z', '+00:00'))
-                session_end = session_start + timedelta(hours=3)
-                
-                if session_start <= now <= session_end:
-                    session['status'] = 'live'
-                    return session
-                elif session_start > now:
-                    session['status'] = 'upcoming'
-                    return session
-            
-            return {"message": "No active or upcoming session"}
-            
+        session_info = await f1_client.get_session_info()
+        
+        if not session_info or session_info.get("Name") == "No Active Session":
+            return {
+                "message": "No active F1 session. Check back during race weekends!",
+                "status": "offline"
+            }
+        
+        # Add status based on session data
+        session_info['status'] = 'live'
+        return session_info
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting session: {e}")
+        return {
+            "message": "Unable to fetch session data",
+            "status": "error"
+        }
 
 
 @app.get("/api/live/positions")
-async def get_live_positions(session_key: Optional[int] = None):
+async def get_live_positions():
     """Get live driver positions"""
     try:
-        if not session_key:
-            # Get latest session key
-            session = await get_live_session()
-            session_key = session.get('session_key')
+        positions = await f1_client.get_position_data()
         
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/position",
-                params={"session_key": session_key}
-            )
-            response.raise_for_status()
-            return response.json()
-            
+        if not positions or "Position" not in positions:
+            return []
+        
+        # Convert position data to array format
+        position_list = []
+        for driver_num, pos_data in positions.get("Position", {}).items():
+            if isinstance(pos_data, dict):
+                position_list.append({
+                    "driver_number": int(driver_num),
+                    "position": pos_data.get("Position", 0),
+                    "x": pos_data.get("X", 0),
+                    "y": pos_data.get("Y", 0),
+                    "z": pos_data.get("Z", 0),
+                    "status": pos_data.get("Status", "OnTrack")
+                })
+        
+        return sorted(position_list, key=lambda x: x['position'])
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting positions: {e}")
+        return []
 
 
-@app.get("/api/live/laps")
-async def get_live_laps(session_key: Optional[int] = None, driver_number: Optional[int] = None):
-    """Get lap times data"""
+@app.get("/api/live/timing")
+async def get_live_timing():
+    """Get live timing data (lap times, sectors, etc.)"""
     try:
-        params = {}
-        if session_key:
-            params['session_key'] = session_key
-        if driver_number:
-            params['driver_number'] = driver_number
-            
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/laps",
-                params=params
-            )
-            response.raise_for_status()
-            return response.json()
-            
+        timing = await f1_client.get_timing_data()
+        
+        if not timing or "Lines" not in timing:
+            return {}
+        
+        return timing
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting timing: {e}")
+        return {}
 
 
 @app.get("/api/live/weather")
-async def get_live_weather(session_key: int):
-    """Get weather data for session"""
+async def get_live_weather():
+    """Get current weather data"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/weather",
-                params={"session_key": session_key}
-            )
-            response.raise_for_status()
-            weather_data = response.json()
-            
-            # Return latest weather reading
-            if weather_data:
-                return weather_data[-1]
-            return {"message": "No weather data available"}
-            
+        weather = await f1_client.get_weather_data()
+        
+        if not weather:
+            return None
+        
+        # Return latest weather data
+        if isinstance(weather, dict):
+            return weather
+        elif isinstance(weather, list) and len(weather) > 0:
+            return weather[-1]
+        
+        return None
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting weather: {e}")
+        return None
 
 
-@app.get("/api/live/car-data")
-async def get_car_data(session_key: int, driver_number: Optional[int] = None):
-    """Get car telemetry data"""
+@app.get("/api/live/track-status")
+async def get_track_status():
+    """Get track status (flags, safety car, etc.)"""
     try:
-        params = {"session_key": session_key}
-        if driver_number:
-            params['driver_number'] = driver_number
-            
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/car_data",
-                params=params
-            )
-            response.raise_for_status()
-            return response.json()
-            
+        status = await f1_client.get_track_status()
+        return status if status else {"Status": "1", "Message": "AllClear"}
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting track status: {e}")
+        return {"Status": "1", "Message": "AllClear"}
+
+
+@app.get("/api/live/race-control")
+async def get_race_control_messages():
+    """Get race control messages"""
+    try:
+        messages = await f1_client.get_race_control_messages()
+        return messages if messages else []
+        
+    except Exception as e:
+        logger.error(f"Error getting race control messages: {e}")
+        return []
 
 
 # ===== DRIVERS ENDPOINTS =====
 
 @app.get("/api/drivers")
-async def get_drivers(session_key: Optional[int] = None):
-    """Get all drivers"""
+async def get_drivers():
+    """Get all drivers in current session"""
     try:
-        params = {}
-        if session_key:
-            params['session_key'] = session_key
-        else:
-            # Get latest session
-            session = await get_live_session()
-            if 'session_key' in session:
-                params['session_key'] = session['session_key']
-                
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/drivers",
-                params=params
-            )
-            response.raise_for_status()
-            return response.json()
+        # Try to get from F1 Live Timing
+        drivers = await f1_client.get_driver_list()
+        
+        if drivers:
+            # Convert F1 format to our format
+            driver_list = []
+            for driver_num, driver_data in drivers.items():
+                driver_list.append({
+                    "driver_number": int(driver_num),
+                    "full_name": driver_data.get("FullName", ""),
+                    "name_acronym": driver_data.get("Tla", ""),
+                    "team_name": driver_data.get("TeamName", ""),
+                    "team_colour": driver_data.get("TeamColour", "FFFFFF"),
+                    "country_code": driver_data.get("CountryCode", "")
+                })
             
+            if driver_list:
+                return driver_list
+        
+        # Fallback to mock data
+        return MOCK_DRIVERS
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting drivers: {e}")
+        return MOCK_DRIVERS
 
 
 @app.get("/api/drivers/{driver_number}")
-async def get_driver(driver_number: int, session_key: Optional[int] = None):
+async def get_driver(driver_number: int):
     """Get specific driver details"""
     try:
-        params = {"driver_number": driver_number}
-        if session_key:
-            params['session_key'] = session_key
-            
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/drivers",
-                params=params
-            )
-            response.raise_for_status()
-            drivers = response.json()
-            
-            if drivers:
-                return drivers[0]
-            raise HTTPException(status_code=404, detail="Driver not found")
-            
+        drivers = await get_drivers()
+        
+        for driver in drivers:
+            if driver.get("driver_number") == driver_number:
+                return driver
+        
+        raise HTTPException(status_code=404, detail="Driver not found")
+        
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error getting driver: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -265,7 +340,7 @@ async def get_driver(driver_number: int, session_key: Optional[int] = None):
 
 @app.get("/api/teams")
 async def get_teams():
-    """Get all teams (extracted from drivers)"""
+    """Get all teams"""
     try:
         drivers = await get_drivers()
         
@@ -289,109 +364,62 @@ async def get_teams():
         return list(teams.values())
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting teams: {e}")
+        return MOCK_TEAMS
 
 
-# ===== RACE CONTROL ENDPOINTS =====
+# ===== STANDINGS ENDPOINTS =====
 
-@app.get("/api/race-control")
-async def get_race_control(session_key: int):
-    """Get race control messages (flags, penalties, etc.)"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/race_control",
-                params={"session_key": session_key}
-            )
-            response.raise_for_status()
-            return response.json()
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/standings/drivers")
+async def get_driver_standings():
+    """Get driver championship standings"""
+    return {
+        "message": "Driver standings not available from live timing",
+        "note": "Use Ergast API or official F1 website for championship standings"
+    }
 
 
-# ===== PIT STOPS ENDPOINTS =====
-
-@app.get("/api/pit-stops")
-async def get_pit_stops(session_key: int, driver_number: Optional[int] = None):
-    """Get pit stop data"""
-    try:
-        params = {"session_key": session_key}
-        if driver_number:
-            params['driver_number'] = driver_number
-            
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{OPENF1_API_URL}/pit",
-                params=params
-            )
-            response.raise_for_status()
-            return response.json()
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/standings/constructors")
+async def get_constructor_standings():
+    """Get constructor championship standings"""
+    return {
+        "message": "Constructor standings not available from live timing",
+        "note": "Use Ergast API or official F1 website for championship standings"
+    }
 
 
-# ===== WEBSOCKET FOR LIVE UPDATES =====
+# ===== WEBSOCKET ENDPOINT =====
 
 @app.websocket("/ws/live")
 async def websocket_live_timing(websocket: WebSocket):
-    """WebSocket endpoint for live timing updates"""
+    """WebSocket endpoint for real-time live timing"""
     await websocket.accept()
     active_connections.append(websocket)
     
     try:
+        # Send initial data
+        await websocket.send_json({
+            "type": "connected",
+            "message": "Connected to ONBOARD F1 Live Timing",
+            "data": live_data_cache
+        })
+        
+        # Keep connection alive
         while True:
-            # Send cached live data
-            if live_data_cache:
-                await websocket.send_json(live_data_cache)
-            await asyncio.sleep(1)  # Update every second
-            
+            # Wait for client messages (ping/pong)
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                await websocket.send_json({"type": "ping"})
+                
     except WebSocketDisconnect:
         active_connections.remove(websocket)
-
-
-# ===== BACKGROUND TASKS =====
-
-async def update_live_data_loop():
-    """Background task to update live data cache"""
-    while True:
-        try:
-            # Get live session
-            session = await get_live_session()
-            
-            if session and session.get('status') == 'live':
-                session_key = session.get('session_key')
-                
-                # Update cache with live data
-                live_data_cache['session'] = session
-                live_data_cache['timestamp'] = datetime.utcnow().isoformat()
-                
-                # Get positions
-                try:
-                    positions = await get_live_positions(session_key)
-                    live_data_cache['positions'] = positions
-                except:
-                    pass
-                
-                # Get weather
-                try:
-                    weather = await get_live_weather(session_key)
-                    live_data_cache['weather'] = weather
-                except:
-                    pass
-                
-                # Broadcast to all connected websocket clients
-                for connection in active_connections:
-                    try:
-                        await connection.send_json(live_data_cache)
-                    except:
-                        active_connections.remove(connection)
-            
-        except Exception as e:
-            print(f"Error updating live data: {e}")
-        
-        await asyncio.sleep(5)  # Update every 5 seconds
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 
 if __name__ == "__main__":

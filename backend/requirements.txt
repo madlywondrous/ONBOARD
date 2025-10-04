@@ -9,6 +9,9 @@ python-dotenv==1.0.1
 pydantic==2.9.2
 pydantic-settings==2.6.0
 
+# SignalR for F1 Live Timing
+signalrcore==0.9.5
+
 # Optional: Redis for caching (comment out if not using)
 # redis==5.2.0
 
