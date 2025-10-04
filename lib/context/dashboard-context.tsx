@@ -98,7 +98,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         }
       })
     } catch (error) {
-      console.warn('Failed to load dashboard state from localStorage:', error)
+      // Silently fallback to default state if localStorage fails
       dispatch({
         type: 'INITIALIZE_STATE',
         payload: {
@@ -115,8 +115,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_ACTIVE_SECTION', payload: section })
     try {
       localStorage.setItem('dashboard-active-section', section)
-    } catch (error) {
-      console.warn('Failed to save active section to localStorage:', error)
+    } catch {
+      // Silently fail if localStorage is unavailable
     }
   }, [])
 
@@ -133,8 +133,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     try {
       const updatedPreferences = { ...state.preferences, ...newPreferences }
       localStorage.setItem('dashboard-preferences', JSON.stringify(updatedPreferences))
-    } catch (error) {
-      console.warn('Failed to save preferences to localStorage:', error)
+    } catch {
+      // Silently fail if localStorage is unavailable
     }
   }, [state.preferences])
 

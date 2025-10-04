@@ -5,7 +5,7 @@ import { ErrorBoundary } from "@/components/error-boundary"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <ErrorBoundary onError={(error, errorInfo) => console.error('App Error:', error, errorInfo)}>
+    <ErrorBoundary>
       <ThemeProvider
         attribute="class"
         defaultTheme="dark"

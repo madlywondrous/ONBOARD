@@ -54,8 +54,12 @@ export function getCountryFlagPath(country: string): string {
  * @param country - Country name
  * @returns Flag code (e.g., "aus", "gbr")
  */
-export function getCountryFlagCode(country: string): string | null {
-  return COUNTRY_FLAG_MAP[country] || null
+export function getCountryFlagCode(country: string): string {
+  const code = COUNTRY_FLAG_MAP[country]
+  if (!code) {
+    return 'xx' // Return unknown flag code for missing countries
+  }
+  return code
 }
 
 /**

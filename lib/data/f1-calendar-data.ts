@@ -130,7 +130,6 @@ export async function loadF1CalendarData(): Promise<Race[]> {
     const jsonData = await import('./f1-2025-calendar.json')
     return transformRaceData(jsonData.default)
   } catch (error) {
-    console.error('Failed to load F1 calendar data:', error)
     throw new Error('Unable to load F1 calendar data')
   }
 }
