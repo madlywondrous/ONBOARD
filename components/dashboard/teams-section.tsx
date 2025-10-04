@@ -4,27 +4,19 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Flag, Trophy, Users, TrendingUp } from "lucide-react"
+import { Trophy, Users, TrendingUp, Flag } from "lucide-react"
 
 interface Team {
   name: string
   color: string
-  drivers: {
+  drivers: Array<{
     number: number
     name: string
     acronym: string
-  }[]
+  }>
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-
-// Constructor standings (example - replace with real API)
-const constructorStandings: Record<string, { position: number; points: number; wins: number }> = {
-  "Red Bull Racing": { position: 1, points: 650, wins: 14 },
-  "Ferrari": { position: 2, points: 520, wins: 8 },
-  "Mercedes": { position: 3, points: 480, wins: 6 },
-  // ... more teams
-}
 
 export function TeamsSection() {
   const [teams, setTeams] = useState<Team[]>([])
@@ -38,15 +30,7 @@ export function TeamsSection() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/teams`)
       const data = await response.json()
-      
-      // Sort teams by standings position (or alphabetically if no standings)
-      const sortedTeams = data.sort((a: Team, b: Team) => {
-        const aPos = constructorStandings[a.name]?.position || 999
-        const bPos = constructorStandings[b.name]?.position || 999
-        return aPos - bPos
-      })
-      
-      setTeams(sortedTeams)
+      setTeams(data)
     } catch (error) {
       console.error("Failed to fetch teams:", error)
     } finally {
@@ -61,132 +45,117 @@ export function TeamsSection() {
   return (
     <div className="space-y-4 bg-black min-h-full p-6">
       {/* Header */}
-      <Card className="bg-neutral-900 border-neutral-700">
+      <Card className="bg-neutral-900 border-neutral-800">
         <CardHeader>
-          <div className="flex items-center gap-3">
-            <Flag className="w-8 h-8 text-red-500" />
-            <div>
-              <CardTitle className="text-2xl font-bold text-white">
-                2025 Constructor Championship
-              </CardTitle>
-              <p className="text-neutral-400 text-sm mt-1">
-                {teams.length} teams competing
-              </p>
-            </div>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-2xl text-white flex items-center gap-2">
+              <Trophy className="w-6 h-6 text-red-500" />
+              F1 Teams 2025
+            </CardTitle>
+            <Badge variant="outline" className="text-white border-neutral-700">
+              {teams.length} Teams
+            </Badge>
           </div>
         </CardHeader>
       </Card>
 
       {/* Teams Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {teams.map((team) => {
-          const standings = constructorStandings[team.name] || { position: 0, points: 0, wins: 0 }
-          
-          return (
-            <Card
-              key={team.name}
-              className="bg-neutral-900 border-neutral-700 hover:border-neutral-600 transition-colors"
-            >
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {teams.map((team, index) => (
+          <Card
+            key={team.name}
+            className="bg-neutral-900 border-neutral-800 hover:border-neutral-700 transition-all group cursor-pointer"
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div
+                    className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-xl text-white"
+                    style={{
+                      background: `linear-gradient(135deg, #${team.color}44, #${team.color}88)`
+                    }}
+                  >
+                    {index + 1}
+                  </div>
+                  <div
+                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-neutral-900"
+                    style={{ backgroundColor: `#${team.color}` }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-lg text-white group-hover:text-red-400 transition-colors">
+                    {team.name}
+                  </CardTitle>
+                  <p className="text-sm text-neutral-500">
+                    {team.drivers.length} drivers
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Drivers */}
+              <div className="space-y-2">
+                {team.drivers.map((driver) => (
+                  <div
+                    key={driver.number}
+                    className="bg-neutral-800/50 rounded-lg p-3 flex items-center gap-3 hover:bg-neutral-800 transition-colors"
+                  >
                     <div
-                      className="w-2 h-16 rounded"
-                      style={{ backgroundColor: team.color ? `#${team.color}` : '#666' }}
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        {standings.position > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            P{standings.position}
-                          </Badge>
-                        )}
-                        <CardTitle className="text-xl text-white">
-                          {team.name}
-                        </CardTitle>
-                      </div>
-                      <div className="flex items-center gap-4 mt-2 text-sm text-neutral-400">
-                        <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4" />
-                          <span>{team.drivers.length} drivers</span>
-                        </div>
-                      </div>
+                      className="w-10 h-10 rounded-md flex items-center justify-center font-bold text-white"
+                      style={{
+                        background: `linear-gradient(135deg, #${team.color}22, #${team.color}44)`
+                      }}
+                    >
+                      {driver.number}
                     </div>
-                  </div>
-                  
-                  {/* Points */}
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-white">{standings.points}</div>
-                    <div className="text-xs text-neutral-400">points</div>
-                  </div>
-                </div>
-              </CardHeader>
-              
-              <CardContent>
-                {/* Drivers */}
-                <div className="space-y-2 mb-4">
-                  <h4 className="text-sm font-semibold text-neutral-400 uppercase">Drivers</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {team.drivers.map((driver) => (
-                      <div
-                        key={driver.number}
-                        className="flex items-center gap-2 p-2 rounded bg-neutral-800"
+                    <div className="flex-1">
+                      <p className="font-semibold text-white text-sm">{driver.name}</p>
+                      <Badge
+                        variant="outline"
+                        className="text-xs mt-1 border-neutral-700 text-neutral-400"
                       >
-                        <div
-                          className="w-8 h-8 rounded flex items-center justify-center text-sm font-bold text-white"
-                          style={{ backgroundColor: `#${team.color}` }}
-                        >
-                          {driver.number}
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-white">
-                            {driver.acronym}
-                          </div>
-                          <div className="text-xs text-neutral-400">
-                            {driver.name}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                        {driver.acronym}
+                      </Badge>
+                    </div>
+                    <div
+                      className="w-2 h-8 rounded-full"
+                      style={{ backgroundColor: `#${team.color}` }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Team Stats Placeholder */}
+              <div className="mt-4 pt-4 border-t border-neutral-800">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs text-neutral-500">Points</p>
+                    <p className="text-lg font-bold text-white">-</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">Wins</p>
+                    <p className="text-lg font-bold text-white">-</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">Podiums</p>
+                    <p className="text-lg font-bold text-white">-</p>
                   </div>
                 </div>
-                
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-neutral-800">
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-1 text-neutral-400 mb-1">
-                      <Trophy className="w-4 h-4" />
-                      <span className="text-xs">Wins</span>
-                    </div>
-                    <div className="text-xl font-bold text-white">{standings.wins}</div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-1 text-neutral-400 mb-1">
-                      <Flag className="w-4 h-4" />
-                      <span className="text-xs">Podiums</span>
-                    </div>
-                    <div className="text-xl font-bold text-white">0</div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-1 text-neutral-400 mb-1">
-                      <TrendingUp className="w-4 h-4" />
-                      <span className="text-xs">Poles</span>
-                    </div>
-                    <div className="text-xl font-bold text-white">0</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
+      {/* Empty State */}
       {teams.length === 0 && (
-        <Card className="bg-neutral-900 border-neutral-700">
+        <Card className="bg-neutral-900 border-neutral-800">
           <CardContent className="py-12 text-center">
-            <p className="text-neutral-400">No team data available</p>
+            <Trophy className="w-16 h-16 mx-auto text-neutral-600 mb-4" />
+            <h3 className="text-xl font-bold text-white mb-2">No teams available</h3>
+            <p className="text-neutral-400">
+              Team data will be loaded when available
+            </p>
           </CardContent>
         </Card>
       )}
@@ -197,34 +166,26 @@ export function TeamsSection() {
 function TeamsSectionSkeleton() {
   return (
     <div className="space-y-4 bg-black min-h-full p-6">
-      <Card className="bg-neutral-900 border-neutral-700">
+      <Card className="bg-neutral-900 border-neutral-800">
         <CardHeader>
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-48 mt-2" />
+          <Skeleton className="h-8 w-48 bg-neutral-800" />
         </CardHeader>
       </Card>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[...Array(6)].map((_, i) => (
-          <Card key={i} className="bg-neutral-900 border-neutral-700">
+          <Card key={i} className="bg-neutral-900 border-neutral-800">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="w-2 h-16 rounded" />
-                  <div className="space-y-2">
-                    <Skeleton className="h-6 w-40" />
-                    <Skeleton className="h-4 w-24" />
-                  </div>
-                </div>
-                <Skeleton className="h-12 w-16" />
-              </div>
+              <Skeleton className="h-6 w-32 bg-neutral-800" />
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <Skeleton className="h-4 w-32" />
-                <div className="grid grid-cols-2 gap-2">
-                  {[...Array(2)].map((_, j) => (
-                    <Skeleton key={j} className="h-12 w-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-16 bg-neutral-800" />
+                <Skeleton className="h-16 bg-neutral-800" />
+              </div>
+              <div className="mt-4 pt-4 border-t border-neutral-800">
+                <div className="grid grid-cols-3 gap-2">
+                  {[...Array(3)].map((_, j) => (
+                    <Skeleton key={j} className="h-12 bg-neutral-800" />
                   ))}
                 </div>
               </div>

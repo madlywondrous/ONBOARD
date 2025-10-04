@@ -14,6 +14,7 @@ import os
 from dotenv import load_dotenv
 from mock_data import MOCK_DRIVERS, MOCK_TEAMS
 from f1_livetiming_client import f1_client
+from session_recorder import recorder
 import logging
 
 # Configure logging
@@ -39,6 +40,10 @@ async def update_live_cache():
         session_info = await f1_client.get_session_info()
         if session_info:
             live_data_cache['session'] = session_info
+            
+            # Auto-start recording if we have a live session
+            if not recorder.is_recording and session_info.get("Name") != "No Active Session":
+                recorder.start_recording(session_info)
         
         # Get timing data
         timing = await f1_client.get_timing_data()
@@ -71,6 +76,10 @@ async def update_live_cache():
             live_data_cache['track_status'] = track_status
         
         live_data_cache['last_update'] = datetime.utcnow().isoformat()
+        
+        # Record frame if recording is active
+        if recorder.is_recording:
+            recorder.record_frame(live_data_cache.copy())
         
     except Exception as e:
         logger.error(f"Error updating live cache: {e}")
@@ -395,6 +404,130 @@ async def get_constructor_standings():
     return {
         "message": "Constructor standings not available from live timing",
         "note": "Use Ergast API or official F1 website for championship standings"
+    }
+
+
+# ===== SESSION RECORDING ENDPOINTS =====
+
+@app.get("/api/recordings")
+async def get_recordings():
+    """Get list of all recorded sessions"""
+    try:
+        recordings = recorder.list_recordings()
+        return {
+            "total": len(recordings),
+            "recordings": recordings
+        }
+    except Exception as e:
+        logger.error(f"Error getting recordings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/recordings/{session_id}")
+async def get_recording(session_id: str):
+    """Get metadata for a specific recording"""
+    try:
+        recording = recorder.get_recording(session_id)
+        if not recording:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        return recording
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/recordings/{session_id}/frames")
+async def get_recording_frames(
+    session_id: str,
+    start: int = 0,
+    count: int = 100
+):
+    """Get frames from a recording for replay"""
+    try:
+        frames = recorder.load_recording_frames(session_id, start, count)
+        if not frames:
+            raise HTTPException(status_code=404, detail="No frames found")
+        return {
+            "session_id": session_id,
+            "start_frame": start,
+            "frame_count": len(frames),
+            "frames": frames
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting recording frames: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/recordings/latest")
+async def get_latest_recording():
+    """Get the most recent recording"""
+    try:
+        recording = recorder.get_latest_recording()
+        if not recording:
+            raise HTTPException(status_code=404, detail="No recordings available")
+        return recording
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting latest recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/recording/start")
+async def start_recording():
+    """Manually start recording current session"""
+    try:
+        session_info = await f1_client.get_session_info()
+        if not session_info or session_info.get("Name") == "No Active Session":
+            raise HTTPException(status_code=400, detail="No active session to record")
+        
+        if recorder.is_recording:
+            return {"message": "Recording already in progress", "session_id": recorder.current_session_id}
+        
+        success = recorder.start_recording(session_info)
+        if success:
+            return {"message": "Recording started", "session_id": recorder.current_session_id}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to start recording")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/recording/stop")
+async def stop_recording():
+    """Manually stop current recording"""
+    try:
+        if not recorder.is_recording:
+            raise HTTPException(status_code=400, detail="No recording in progress")
+        
+        session_id = recorder.current_session_id
+        recorder.stop_recording()
+        return {
+            "message": "Recording stopped",
+            "session_id": session_id,
+            "frames": recorder.frame_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error stopping recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/recording/status")
+async def get_recording_status():
+    """Get current recording status"""
+    return {
+        "is_recording": recorder.is_recording,
+        "session_id": recorder.current_session_id,
+        "frame_count": recorder.frame_count
     }
 
 
