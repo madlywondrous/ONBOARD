@@ -38,15 +38,20 @@ const nextConfig = {
   // Experimental features for performance
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
+  },
+
+  // Turbopack configuration (moved from experimental.turbo)
+  turbopack: {
+    rules: {
+      '*.svg': {
+        loaders: ['@svgr/webpack'],
+        as: '*.js',
       },
     },
   },
+
+  // Set output file tracing root to silence lockfile warning
+  outputFileTracingRoot: process.cwd(),
 
   // Environment-specific configurations
   ...(process.env.NODE_ENV === 'production' && {
