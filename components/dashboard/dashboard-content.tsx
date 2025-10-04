@@ -4,6 +4,10 @@ import dynamic from "next/dynamic"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 // Dynamic imports with loading components
+const LiveSection = dynamic(() => import("@/components/dashboard/live-section").then(mod => ({ default: mod.LiveSection })), { 
+  ssr: false,
+  loading: () => <SectionSkeleton />
+})
 const CalendarSection = dynamic(() => import("@/components/dashboard/calendar-section").then(mod => ({ default: mod.CalendarSection })), { 
   ssr: false,
   loading: () => <SectionSkeleton />
@@ -40,6 +44,7 @@ function SectionSkeleton() {
 }
 
 // Error fallback components
+const LiveErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Live" />
 const CalendarErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Calendar" />
 const DriversErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Drivers" />
 const TeamsErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Teams" />
@@ -72,6 +77,14 @@ interface DashboardContentProps {
 export const DashboardContent = memo(function DashboardContent({ activeSection }: DashboardContentProps) {
   const renderSection = () => {
     switch (activeSection) {
+      case "live":
+        return (
+          <ErrorBoundary fallback={LiveErrorFallback}>
+            <Suspense fallback={<SectionSkeleton />}>
+              <LiveSection />
+            </Suspense>
+          </ErrorBoundary>
+        )
       case "calendar":
         return (
           <ErrorBoundary fallback={CalendarErrorFallback}>

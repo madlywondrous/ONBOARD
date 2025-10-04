@@ -1,4 +1,4 @@
-import { Calendar, Users, Trophy, BarChart3, Flag } from "lucide-react"
+import { Calendar, Users, Trophy, BarChart3, Flag, Radio } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 export interface NavigationItem {
@@ -9,6 +9,7 @@ export interface NavigationItem {
 }
 
 export const navigationItems: NavigationItem[] = [
+  { id: "live", icon: Radio, label: "LIVE" },
   { id: "calendar", icon: Calendar, label: "SCHEDULE" },
   { id: "drivers", icon: Users, label: "DRIVERS" },
   { id: "teams", icon: Flag, label: "TEAMS" },
@@ -16,4 +17,4 @@ export const navigationItems: NavigationItem[] = [
   { id: "statistics", icon: BarChart3, label: "STATISTICS" },
 ]
 
-export type DashboardSection = "calendar" | "drivers" | "teams" | "standings" | "statistics"
+export type DashboardSection = "live" | "calendar" | "drivers" | "teams" | "standings" | "statistics"
