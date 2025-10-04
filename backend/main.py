@@ -99,7 +99,7 @@ async def poll_live_data():
         except Exception as e:
             logger.error(f"Error in poll loop: {e}")
         
-        await asyncio.sleep(1)  # Update every second for real-time data
+        await asyncio.sleep(5)  # Update every 5 seconds (data comes via SignalR anyway)
 
 
 @asynccontextmanager
@@ -297,9 +297,19 @@ async def get_drivers():
             # Convert F1 format to our format
             driver_list = []
             for driver_num, driver_data in drivers.items():
+                # Skip metadata keys (start with underscore)
+                if driver_num.startswith('_'):
+                    continue
+                    
+                # Skip if not a valid driver number
+                try:
+                    int(driver_num)
+                except ValueError:
+                    continue
+                
                 driver_list.append({
                     "driver_number": int(driver_num),
-                    "full_name": driver_data.get("FullName", ""),
+                    "full_name": driver_data.get("FullName", driver_data.get("FirstName", "") + " " + driver_data.get("LastName", "")),
                     "name_acronym": driver_data.get("Tla", ""),
                     "team_name": driver_data.get("TeamName", ""),
                     "team_colour": driver_data.get("TeamColour", "FFFFFF"),
@@ -307,7 +317,7 @@ async def get_drivers():
                 })
             
             if driver_list:
-                return driver_list
+                return sorted(driver_list, key=lambda x: x['driver_number'])
         
         # Fallback to mock data
         return MOCK_DRIVERS
