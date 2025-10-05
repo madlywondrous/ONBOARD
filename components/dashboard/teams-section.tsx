@@ -43,7 +43,7 @@ export function TeamsSection() {
   }
 
   return (
-    <div className="space-y-4 bg-black min-h-full p-6">
+    <div className="space-y-4 bg-black min-h-full">
       {/* Header */}
       <Card className="bg-neutral-900 border-neutral-800">
         <CardHeader>
@@ -165,7 +165,7 @@ export function TeamsSection() {
 
 function TeamsSectionSkeleton() {
   return (
-    <div className="space-y-4 bg-black min-h-full p-6">
+    <div className="space-y-4 bg-black min-h-full">
       <Card className="bg-neutral-900 border-neutral-800">
         <CardHeader>
           <Skeleton className="h-8 w-48 bg-neutral-800" />

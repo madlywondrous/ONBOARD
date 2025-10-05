@@ -77,7 +77,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const savedSection = localStorage.getItem('dashboard-active-section') as DashboardSection
       const savedPreferences = localStorage.getItem('dashboard-preferences')
       
-      const defaultSection = savedSection && ['calendar', 'drivers', 'teams', 'standings', 'statistics'].includes(savedSection) 
+      const defaultSection = savedSection && ['live', 'calendar', 'drivers', 'teams', 'standings', 'statistics'].includes(savedSection) 
         ? savedSection 
         : 'calendar'
 

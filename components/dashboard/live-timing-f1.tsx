@@ -200,7 +200,7 @@ export function LiveTimingF1() {
   const isLive = sessionInfo?.status === "live"
 
   return (
-    <div className="h-screen bg-black p-3 overflow-hidden">
+    <div className="h-full bg-black overflow-hidden">
       {/* Stats Cards - Updated with proper data */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         <Card className="bg-neutral-900 border-neutral-700">
@@ -445,7 +445,7 @@ export function LiveTimingF1() {
 
 function LiveTimingSkeleton() {
   return (
-    <div className="min-h-screen bg-black p-4 sm:p-6">
+    <div className="h-full bg-black">
       <div className="mb-6">
         <Skeleton className="h-8 w-64 bg-neutral-800 mb-4" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
