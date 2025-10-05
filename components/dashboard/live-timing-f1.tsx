@@ -259,17 +259,17 @@ export function LiveTimingF1() {
           <CardContent className="p-0 flex flex-col flex-1 min-h-0">
             {/* Header Row */}
             <div className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-2 flex items-center gap-3 text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0">
-              <div className="w-10 text-center">POS</div>
-              <div className="w-12">DRV</div>
+              <div className="w-12 text-center">POS</div>
+              <div className="w-14">DRV</div>
               <div className="w-20">GAP</div>
-              <div className="w-16">TYRE</div>
+              <div className="text-center">TYRE</div>
               <div className="flex gap-6 ml-2">
-                <div className="w-14 text-center">S1</div>
-                <div className="w-14 text-center">S2</div>
-                <div className="w-14 text-center">S3</div>
+                <div className="w-16 text-center">S1</div>
+                <div className="w-16 text-center">S2</div>
+                <div className="w-16 text-center">S3</div>
               </div>
               <div className="flex-1 text-center">TRACK</div>
-              <div className="w-20 text-right">BEST</div>
+              <div className="w-24 text-right">BEST</div>
             </div>
 
             <div className="flex-1 overflow-y-auto timing-scroll">
@@ -281,7 +281,7 @@ export function LiveTimingF1() {
                 return (
                   <div
                     key={line.RacingNumber}
-                    className="border-b border-neutral-800 hover:bg-neutral-800/50 transition-colors px-3 py-2.5"
+                    className="border-b border-neutral-800 hover:bg-neutral-800/50 transition-colors px-3 py-2"
                     style={{ borderLeft: `4px solid #${teamColor}` }}
                   >
                     {/* Single Row Layout with proper alignment */}
@@ -343,7 +343,7 @@ export function LiveTimingF1() {
                       </div>
 
                       {/* Mini-Segments - Horizontal Bar */}
-                      <div className="flex gap-[2px] flex-1 min-w-0 h-3.5">
+                      <div className="flex gap-[2px] flex-1 min-w-0 h-2.5">
                         {line.Sectors?.[0]?.Segments ? (
                           line.Sectors.flatMap((sector: any) => sector.Segments || []).slice(0, 24).map((seg: any, segIdx: number) => (
                             <div
