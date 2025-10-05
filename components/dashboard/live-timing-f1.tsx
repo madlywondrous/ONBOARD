@@ -200,9 +200,9 @@ export function LiveTimingF1() {
   const isLive = sessionInfo?.status === "live"
 
   return (
-    <div className="h-full bg-black overflow-hidden">
+    <div className="h-full bg-black overflow-hidden flex flex-col">
       {/* Stats Cards - Updated with proper data */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 flex-shrink-0">
         <Card className="bg-neutral-900 border-neutral-700">
           <CardContent className="p-3">
             <div className="flex items-center justify-between">
@@ -253,12 +253,12 @@ export function LiveTimingF1() {
       </div>
 
       {/* Main Grid - Aligned with Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 flex-1 min-h-0">
         {/* Timing Tower - Takes 3 columns (same as first 3 stats cards) */}
-        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-3">
-          <CardContent className="p-0">
+        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-3 flex flex-col">
+          <CardContent className="p-0 flex flex-col flex-1 min-h-0">
             {/* Header Row */}
-            <div className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-2 flex items-center gap-3 text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+            <div className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-2 flex items-center gap-3 text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0">
               <div className="w-10 text-center">POS</div>
               <div className="w-12">DRV</div>
               <div className="w-20">GAP</div>
@@ -272,7 +272,7 @@ export function LiveTimingF1() {
               <div className="w-20 text-right">BEST</div>
             </div>
 
-            <div className="max-h-[calc(100vh-280px)] overflow-y-auto timing-scroll">
+            <div className="flex-1 overflow-y-auto timing-scroll">
               {timingLines.map((line, idx) => {
                 const driver = drivers[line.RacingNumber]
                 const teamColor = driver?.team_colour || "666666"
@@ -376,15 +376,15 @@ export function LiveTimingF1() {
         </Card>
 
         {/* Race Control - Takes 1 column (same as 4th stats card) */}
-        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-1">
-          <CardHeader className="pb-3 border-b border-neutral-800">
+        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-1 flex flex-col">
+          <CardHeader className="pb-3 border-b border-neutral-800 flex-shrink-0">
             <CardTitle className="text-base font-bold text-white tracking-wider flex items-center gap-2">
               <Flag className="w-4 h-4 text-orange-500" />
               RACE CONTROL
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[calc(100vh-280px)] overflow-y-auto timing-scroll">
+          <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto timing-scroll">
               {raceControl.length > 0 ? (
                 <div className="divide-y divide-neutral-800">
                   {[...raceControl].reverse().map((msg, idx) => {
