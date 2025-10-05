@@ -287,43 +287,43 @@ export function LiveTimingF1() {
                     {/* Single Row Layout with proper alignment */}
                     <div className="flex items-center gap-3">
                       {/* Position */}
-                      <div className="text-2xl font-bold text-white w-10 text-center flex-shrink-0">
+                      <div className="text-3xl font-bold text-white w-12 text-center flex-shrink-0">
                         {line.Position}
                       </div>
 
-                      {/* Driver Badge - Smaller */}
+                      {/* Driver Badge - Bigger */}
                       <div
-                        className="px-2 py-1 rounded font-bold text-sm flex-shrink-0 w-12 text-center"
+                        className="px-3 py-1.5 rounded font-bold text-base flex-shrink-0 w-14 text-center"
                         style={{ backgroundColor: `#${teamColor}`, color: '#000' }}
                       >
                         {driver?.name_acronym || line.RacingNumber}
                       </div>
 
                       {/* Gap + PIT/OUT indicators */}
-                      <div className="flex flex-col gap-0.5 w-20 flex-shrink-0">
-                        <div className="text-sm font-mono text-neutral-300">
+                      <div className="flex flex-col gap-1 w-20 flex-shrink-0">
+                        <div className="text-base font-mono text-neutral-300 font-semibold">
                           {idx === 0 ? "LEAD" : (line.Stats?.[1]?.TimeDiffToFastest || line.Stats?.[0]?.TimeDiffToFastest || "---")}
                         </div>
                         {line.InPit && (
-                          <Badge className="bg-cyan-500 text-black px-1.5 py-0 text-[8px] w-fit">PIT</Badge>
+                          <Badge className="bg-cyan-500 text-black px-2 py-0.5 text-xs font-bold w-fit">PIT</Badge>
                         )}
                       </div>
 
-                      {/* Tyre Icon + Laps */}
-                      <div className="flex items-center gap-1.5 flex-shrink-0 w-16">
+                      {/* Tyre Icon + Laps - Compact */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         {currentTyre ? (
                           <>
                             <Image
                               src={getTyreImage(currentTyre.compound)}
                               alt={currentTyre.compound}
-                              width={28}
-                              height={28}
+                              width={32}
+                              height={32}
                               className="opacity-90"
                             />
-                            <span className="text-xs text-neutral-400 font-semibold">{currentTyre.laps}</span>
+                            <span className="text-sm text-neutral-300 font-bold">{currentTyre.laps}</span>
                           </>
                         ) : (
-                          <div className="w-7" />
+                          <div className="w-8" />
                         )}
                       </div>
 
@@ -334,7 +334,7 @@ export function LiveTimingF1() {
                           return (
                             <div 
                               key={sectorIdx} 
-                              className="text-lg font-mono font-bold text-center w-14 text-neutral-100"
+                              className="text-xl font-mono font-bold text-center w-16 text-neutral-100"
                             >
                               {sector?.Value || "---"}
                             </div>
@@ -358,13 +358,13 @@ export function LiveTimingF1() {
                       </div>
 
                       {/* Best Lap Time - Larger */}
-                      <div className="w-20 text-right flex-shrink-0">
+                      <div className="w-24 text-right flex-shrink-0">
                         {line.BestLapTimes?.[0]?.Value ? (
-                          <div className="text-lg font-mono font-bold text-purple-400">
+                          <div className="text-xl font-mono font-bold text-purple-400">
                             {line.BestLapTimes[0].Value}
                           </div>
                         ) : (
-                          <div className="text-sm text-neutral-600">--:--:---</div>
+                          <div className="text-base text-neutral-600">--:--:---</div>
                         )}
                       </div>
                     </div>
