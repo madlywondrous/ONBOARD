@@ -107,17 +107,14 @@ export function LiveTimingF1() {
 
   const fetchLiveData = async () => {
     try {
-      // Use mock endpoints for development when live session is not available
-      const USE_MOCK = true // Set to false when live race is on
-      
-      console.log(`🏁 Fetching ${USE_MOCK ? 'MOCK' : 'LIVE'} data...`)
+      console.log('🏁 Fetching LIVE data from SignalR...')
       
       const [sessionRes, timingRes, tyreRes, rcRes, tsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/session`),
-        fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/timing`),
-        fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/timing-app`),
-        fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/race-control`),
-        fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/track-status`)
+        fetch(`${API_BASE_URL}/api/live/session`),
+        fetch(`${API_BASE_URL}/api/live/timing`),
+        fetch(`${API_BASE_URL}/api/live/timing-app`),
+        fetch(`${API_BASE_URL}/api/live/race-control`),
+        fetch(`${API_BASE_URL}/api/live/track-status`)
       ])
 
       const sessionData = await sessionRes.json()

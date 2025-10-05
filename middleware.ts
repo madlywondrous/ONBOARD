@@ -1,11 +1,23 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+// Middleware is disabled - no authentication required
+// If you want to enable authentication, install next-auth and uncomment below
 
-export function middleware(request: NextRequest) {
-  // Add any additional middleware logic here
-  return NextResponse.next()
-}
+/*
+import { withAuth } from "next-auth/middleware"
+
+export default withAuth(
+  function middleware(req) {
+    // Add any additional middleware logic here
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token,
+    },
+  }
+)
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|Onboard.svg).*)"],
+  matcher: ["/((?!api/auth|auth/signin|_next/static|_next/image|favicon.ico|Onboard.svg).*)"],
 }
+*/
+
+export {}

@@ -144,19 +144,16 @@ export function LiveTimingPro() {
 
   const fetchLiveData = async () => {
     try {
-      // Use mock endpoints for development when live session is not available
-      const USE_MOCK = true // Set to false when live race is on
-      
-      console.log(`🏎️ Fetching ${USE_MOCK ? 'MOCK' : 'LIVE'} data...`)
+      console.log('🏎️ Fetching LIVE data from SignalR...')
       
       // Fetch session info
-      const sessionRes = await fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/session`)
+      const sessionRes = await fetch(`${API_BASE_URL}/api/live/session`)
       const sessionData = await sessionRes.json()
       console.log("🏎️ Session data:", sessionData)
       setSessionInfo(sessionData)
 
       // Fetch timing data
-      const timingRes = await fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/timing`)
+      const timingRes = await fetch(`${API_BASE_URL}/api/live/timing`)
       const timingData = await timingRes.json()
       console.log("🏎️ Timing data:", timingData)
 
@@ -172,7 +169,7 @@ export function LiveTimingPro() {
       }
 
       // Fetch tyre data
-      const tyreRes = await fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/timing-app`)
+      const tyreRes = await fetch(`${API_BASE_URL}/api/live/timing-app`)
       const tyreDataRes = await tyreRes.json()
       console.log("🏎️ Tyre data:", tyreDataRes)
       if (tyreDataRes.Lines) {
