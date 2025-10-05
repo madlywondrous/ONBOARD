@@ -16,7 +16,8 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+// Use relative URLs so Next.js rewrites can proxy to backend
+const API_BASE_URL = ""
 
 // Status colors for sector segments (F1 official colors)
 const SECTOR_STATUS_COLORS: { [key: number]: string } = {
@@ -102,7 +103,10 @@ export function LiveTimingPro() {
   const [selectedRecording, setSelectedRecording] = useState<string | null>(null)
   const [currentFrame, setCurrentFrame] = useState(0)
 
+  console.log("🏎️ LiveTimingPro component rendered!", { loading, timingLines: timingLines.length })
+
   useEffect(() => {
+    console.log("🏎️ LiveTimingPro mounted - fetching data...")
     fetchInitialData()
     const interval = setInterval(() => {
       if (isLive && !selectedRecording) {
@@ -140,14 +144,21 @@ export function LiveTimingPro() {
 
   const fetchLiveData = async () => {
     try {
+      // Use mock endpoints for development when live session is not available
+      const USE_MOCK = true // Set to false when live race is on
+      
+      console.log(`🏎️ Fetching ${USE_MOCK ? 'MOCK' : 'LIVE'} data...`)
+      
       // Fetch session info
-      const sessionRes = await fetch(`${API_BASE_URL}/api/live/session`)
+      const sessionRes = await fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/session`)
       const sessionData = await sessionRes.json()
+      console.log("🏎️ Session data:", sessionData)
       setSessionInfo(sessionData)
 
       // Fetch timing data
-      const timingRes = await fetch(`${API_BASE_URL}/api/live/timing`)
+      const timingRes = await fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/timing`)
       const timingData = await timingRes.json()
+      console.log("🏎️ Timing data:", timingData)
 
       if (timingData.Lines) {
         const lines = Object.values(timingData.Lines) as TimingLine[]
@@ -156,12 +167,14 @@ export function LiveTimingPro() {
           const posB = parseInt(b.Position) || 999
           return posA - posB
         })
+        console.log(`🏎️ Sorted ${sortedLines.length} drivers`)
         setTimingLines(sortedLines)
       }
 
       // Fetch tyre data
-      const tyreRes = await fetch(`${API_BASE_URL}/api/live/timing-app`)
+      const tyreRes = await fetch(`${API_BASE_URL}/api/${USE_MOCK ? 'mock' : 'live'}/timing-app`)
       const tyreDataRes = await tyreRes.json()
+      console.log("🏎️ Tyre data:", tyreDataRes)
       if (tyreDataRes.Lines) {
         const tyreMap: { [key: string]: TimingAppLine } = {}
         Object.entries(tyreDataRes.Lines).forEach(([key, value]) => {
@@ -170,7 +183,7 @@ export function LiveTimingPro() {
         setTyreData(tyreMap)
       }
     } catch (error) {
-      console.error("Failed to fetch live data:", error)
+      console.error("❌ Failed to fetch live data:", error)
     }
   }
 

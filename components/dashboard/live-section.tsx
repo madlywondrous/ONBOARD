@@ -1,7 +1,8 @@
 "use client"
 
-import { LiveTimingPro } from "./live-timing-pro"
+import { LiveTimingF1 } from "./live-timing-f1"
 
 export function LiveSection() {
-  return <LiveTimingPro />
+  console.log("🔴 LiveSection component rendered - using LiveTimingF1")
+  return <LiveTimingF1 />
 }

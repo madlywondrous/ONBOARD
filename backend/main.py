@@ -589,6 +589,224 @@ async def websocket_live_timing(websocket: WebSocket):
             active_connections.remove(websocket)
 
 
+# ===== MOCK/DEVELOPMENT ENDPOINTS =====
+
+@app.get("/api/mock/session")
+async def get_mock_session():
+    """Get mock session data for development"""
+    return {
+        "Meeting": {"Name": "Singapore Grand Prix"},
+        "Type": "Qualifying",
+        "Name": "Qualifying",
+        "status": "live",
+        "SessionInfo": {
+            "Meeting": {"Name": "Singapore Grand Prix"},
+            "Name": "Qualifying"
+        }
+    }
+
+
+@app.get("/api/mock/timing")
+async def get_mock_timing():
+    """Get mock timing data with realistic F1 data"""
+    return {
+        "Lines": {
+            "63": {
+                "RacingNumber": "63",
+                "Position": "1",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "35.838", "Status": 2051, "Segments": [{"Status": 2051}] * 8},
+                    {"Value": "50.036", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "25.354", "Status": 2064, "Segments": [{"Status": 2064}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:29.928"}],
+                "Stats": [{"TimeDiffToFastest": "0.000"}]
+            },
+            "55": {
+                "RacingNumber": "55",
+                "Position": "2",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "35.942", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.136", "Status": 2064, "Segments": [{"Status": 2064}] * 8},
+                    {"Value": "25.454", "Status": 2068, "Segments": [{"Status": 2068}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.128"}],
+                "Stats": [{"TimeDiffToFastest": "+0.010", "TimeDifftoPositionAhead": "+0.010"}]
+            },
+            "81": {
+                "RacingNumber": "81",
+                "Position": "3",
+                "InPit": True,
+                "Sectors": [
+                    {"Value": "36.042", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.236", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "25.554", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.328"}],
+                "Stats": [{"TimeDiffToFastest": "+0.251", "TimeDifftoPositionAhead": "+0.241"}]
+            },
+            "14": {
+                "RacingNumber": "14",
+                "Position": "4",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.142", "Status": 2064, "Segments": [{"Status": 2064}] * 8},
+                    {"Value": "50.336", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "25.654", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.428"}],
+                "Stats": [{"TimeDiffToFastest": "+0.087", "TimeDifftoPositionAhead": "+0.036"}]
+            },
+            "4": {
+                "RacingNumber": "4",
+                "Position": "5",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.242", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.436", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "25.754", "Status": 2064, "Segments": [{"Status": 2064}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.528"}],
+                "Stats": [{"TimeDiffToFastest": "+0.247", "TimeDifftoPositionAhead": "+0.160"}]
+            },
+            "44": {
+                "RacingNumber": "44",
+                "Position": "6",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.342", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.536", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "25.854", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.628"}],
+                "Stats": [{"TimeDiffToFastest": "+0.374", "TimeDifftoPositionAhead": "+0.127"}]
+            },
+            "16": {
+                "RacingNumber": "16",
+                "Position": "7",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.442", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.636", "Status": 2064, "Segments": [{"Status": 2064}] * 8},
+                    {"Value": "25.954", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.728"}],
+                "Stats": [{"TimeDiffToFastest": "+0.352", "TimeDifftoPositionAhead": "+0.078"}]
+            },
+            "23": {
+                "RacingNumber": "23",
+                "Position": "8",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.542", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.736", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "26.054", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.828"}],
+                "Stats": [{"TimeDiffToFastest": "+0.454", "TimeDifftoPositionAhead": "+0.102"}]
+            },
+            "27": {
+                "RacingNumber": "27",
+                "Position": "9",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.642", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.836", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "26.154", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:30.928"}],
+                "Stats": [{"TimeDiffToFastest": "+0.514", "TimeDifftoPositionAhead": "+0.060"}]
+            },
+            "10": {
+                "RacingNumber": "10",
+                "Position": "10",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.742", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "50.936", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "26.254", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:31.028"}],
+                "Stats": [{"TimeDiffToFastest": "+0.492", "TimeDifftoPositionAhead": "+0.078"}]
+            },
+            "22": {
+                "RacingNumber": "22",
+                "Position": "11",
+                "InPit": False,
+                "Sectors": [
+                    {"Value": "36.842", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "51.036", "Status": 2048, "Segments": [{"Status": 2048}] * 8},
+                    {"Value": "26.354", "Status": 2048, "Segments": [{"Status": 2048}] * 8}
+                ],
+                "BestLapTimes": [{"Value": "1:31.128"}],
+                "Stats": [{"TimeDiffToFastest": "+0.579", "TimeDifftoPositionAhead": "+0.087"}]
+            }
+        }
+    }
+
+
+@app.get("/api/mock/timing-app")
+async def get_mock_timing_app():
+    """Get mock timing app data (tyres)"""
+    return {
+        "Lines": {
+            "63": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "55": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "81": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "14": {"Stints": [{"Compound": "SOFT", "New": "false", "TotalLaps": 2}]},
+            "4": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "44": {"Stints": [{"Compound": "SOFT", "New": "false", "TotalLaps": 3}]},
+            "16": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "23": {"Stints": [{"Compound": "SOFT", "New": "false", "TotalLaps": 1}]},
+            "27": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "10": {"Stints": [{"Compound": "SOFT", "New": "true", "TotalLaps": 2}]},
+            "22": {"Stints": [{"Compound": "SOFT", "New": "false", "TotalLaps": 3}]}
+        }
+    }
+
+
+@app.get("/api/mock/race-control")
+async def get_mock_race_control():
+    """Get mock race control messages"""
+    return [
+        {
+            "Utc": "2024-10-05T10:15:23Z",
+            "Category": "Flag",
+            "Flag": "GREEN",
+            "Message": "TRACK CLEAR"
+        },
+        {
+            "Utc": "2024-10-05T10:12:45Z",
+            "Category": "Flag",
+            "Flag": "YELLOW",
+            "Sector": 2,
+            "Message": "YELLOW IN SECTOR 2"
+        },
+        {
+            "Utc": "2024-10-05T10:10:12Z",
+            "Category": "Other",
+            "Message": "FIA STEWARDS: Q1 INCIDENT INVOLVING CARS 10 (GAS) - UNDER INVESTIGATION"
+        },
+        {
+            "Utc": "2024-10-05T10:05:30Z",
+            "Category": "Flag",
+            "Flag": "GREEN",
+            "Message": "SESSION STARTED"
+        }
+    ]
+
+
+@app.get("/api/mock/track-status")
+async def get_mock_track_status():
+    """Get mock track status"""
+    return {
+        "Status": "1",
+        "Message": "AllClear"
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     

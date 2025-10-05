@@ -63,7 +63,7 @@ const nextConfig = {
     output: 'standalone', // For Docker deployments
   }),
 
-  // Security headers
+    // Security headers
   async headers() {
     return [
       {
@@ -98,6 +98,16 @@ const nextConfig = {
             value: 'camera=(), microphone=(), geolocation=()',
           },
         ],
+      },
+    ]
+  },
+
+  // API rewrites to proxy backend requests
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:8000/api/:path*',
       },
     ]
   },
