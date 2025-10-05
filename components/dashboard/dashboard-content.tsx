@@ -131,7 +131,7 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
   }
 
   return (
-    <div id="main-content" className="flex-1 min-w-0 min-h-0 overflow-auto bg-black p-3 sm:p-6" style={{ overscrollBehavior: 'none' }}>
+    <div id="main-content" className="flex-1 min-w-0 min-h-0 overflow-auto bg-black p-3" style={{ overscrollBehavior: 'none' }}>
       {renderSection()}
     </div>
   )

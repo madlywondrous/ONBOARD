@@ -6,8 +6,11 @@ FastAPI server for live timing using Official F1 Live Timing API
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi import Response
+from sse_starlette.sse import EventSourceResponse
 from contextlib import asynccontextmanager
 import asyncio
+import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import os
@@ -17,8 +20,14 @@ from f1_livetiming_client import f1_client
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Set debug level for F1 client to see real-time updates
+logging.getLogger('f1_livetiming_client').setLevel(logging.DEBUG)
 
 load_dotenv()
 
@@ -30,59 +39,130 @@ F1_LIVETIMING_BASE = "https://livetiming.formula1.com"
 # Cache for storing live data
 live_data_cache: Dict[str, Any] = {}
 active_connections: List[WebSocket] = []
+sse_clients: List[asyncio.Queue] = []
 
 
 async def update_live_cache():
     """Update live data cache from F1 API"""
     try:
+        logger.debug("🔄 Updating live cache...")
+        
         # Get session info
         session_info = await f1_client.get_session_info()
         if session_info:
             live_data_cache['session'] = session_info
+            logger.debug(f"✅ Session: {session_info.get('Type', 'Unknown')}")
+        else:
+            logger.warning("⚠️ No session info received")
         
         # Get timing data
         timing = await f1_client.get_timing_data()
-        if timing:
+        if timing and timing.get('Lines'):
             live_data_cache['timing'] = timing
+            logger.debug(f"✅ Timing: {len(timing.get('Lines', {}))} drivers")
+        else:
+            logger.warning(f"⚠️ No timing data: {timing}")
+        
+        # Get LAP COUNT - CRITICAL for showing current lap!
+        lap_count = f1_client.lap_count
+        if lap_count:
+            live_data_cache['lap_count'] = lap_count
+            logger.debug(f"✅ Lap: {lap_count.get('CurrentLap', '?')}/{lap_count.get('TotalLaps', '?')}")
+        else:
+            logger.warning("⚠️ No lap count data")
+        
+        # Get timing app data (tyres, DRS, etc.)
+        timing_app = f1_client.timing_app_data
+        if timing_app:
+            live_data_cache['timing_app_data'] = timing_app
+            logger.debug(f"✅ Timing app data received")
         
         # Get positions
         positions = await f1_client.get_position_data()
         if positions:
             live_data_cache['positions'] = positions
+            logger.debug(f"✅ Position data received")
         
         # Get weather
         weather = await f1_client.get_weather_data()
         if weather:
             live_data_cache['weather'] = weather
+            logger.debug(f"✅ Weather: {weather.get('AirTemp', '?')}°C")
+        else:
+            logger.warning("⚠️ No weather data")
         
         # Get driver list
         drivers = await f1_client.get_driver_list()
         if drivers:
             live_data_cache['drivers'] = drivers
+            logger.debug(f"✅ Drivers: {len(drivers)} drivers")
+        else:
+            logger.warning("⚠️ No driver list")
         
         # Get race control messages
         messages = await f1_client.get_race_control_messages()
         if messages:
             live_data_cache['race_control'] = messages
+            logger.debug(f"✅ Race control: {len(messages)} messages")
         
         # Get track status
         track_status = await f1_client.get_track_status()
         if track_status:
             live_data_cache['track_status'] = track_status
+            logger.debug(f"✅ Track status: {track_status.get('Status', '?')}")
+        
+        # Get team radio
+        team_radio = f1_client.team_radio
+        if team_radio:
+            live_data_cache['team_radio'] = team_radio
+            logger.debug(f"✅ Team radio: {len(team_radio)} messages")
         
         live_data_cache['last_update'] = datetime.utcnow().isoformat()
         
+        # Log cache summary
+        logger.info(f"📦 Cache updated: session={bool(live_data_cache.get('session'))}, timing={len(live_data_cache.get('timing', {}).get('Lines', {}))}, lap={live_data_cache.get('lap_count')}")
+        
     except Exception as e:
-        logger.error(f"Error updating live cache: {e}")
+        logger.error(f"Error updating live cache: {e}", exc_info=True)
 
 
 async def poll_live_data():
     """Background task to poll F1 Live Timing"""
     while True:
         try:
+            # Check if connection is alive and reconnect if needed
+            await f1_client.reconnect_if_needed()
+            
+            # Log connection status
+            if f1_client.is_alive():
+                logger.debug("✅ F1 connection alive, updating cache...")
+            else:
+                logger.warning("⚠️ F1 connection not alive!")
+            
             await update_live_cache()
             
-            # Notify WebSocket clients
+            # Broadcast to SSE clients (f1-dash style)
+            if sse_clients:
+                sse_message = {
+                    "event": "update",
+                    "data": JSONResponse(content=live_data_cache).body.decode()
+                }
+                
+                logger.debug(f"📤 Broadcasting to {len(sse_clients)} SSE client(s)")
+                
+                disconnected = []
+                for client_queue in sse_clients:
+                    try:
+                        client_queue.put_nowait(sse_message)
+                    except Exception as e:
+                        logger.warning(f"Failed to send to SSE client: {e}")
+                        disconnected.append(client_queue)
+                
+                # Remove disconnected clients
+                for queue in disconnected:
+                    sse_clients.remove(queue)
+            
+            # Also notify WebSocket clients (legacy support)
             if active_connections:
                 message = {
                     "type": "update",
@@ -90,16 +170,24 @@ async def poll_live_data():
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 
+                logger.debug(f"📤 Broadcasting to {len(active_connections)} WebSocket client(s)")
+                
+                disconnected = []
                 for connection in active_connections:
                     try:
                         await connection.send_json(message)
-                    except:
-                        active_connections.remove(connection)
+                    except Exception as e:
+                        logger.warning(f"Failed to send to WebSocket client: {e}")
+                        disconnected.append(connection)
+                
+                # Remove disconnected clients
+                for conn in disconnected:
+                    active_connections.remove(conn)
         
         except Exception as e:
             logger.error(f"Error in poll loop: {e}")
         
-        await asyncio.sleep(5)  # Update every 5 seconds (data comes via SignalR anyway)
+        await asyncio.sleep(0.5)  # Update every 500ms for more responsive feel
 
 
 @asynccontextmanager
@@ -141,6 +229,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add middleware to prevent caching of live data
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/live"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 
 # ===== API ENDPOINTS =====
 
@@ -157,13 +255,19 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health():
     """Health check endpoint"""
+    last_message_time = f1_client._t_last_message
+    time_since_message = time.time() - last_message_time if last_message_time else None
+    
     return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "cache_size": len(live_data_cache),
-        "f1_connected": f1_client.connected
+        "status": "ok",
+        "f1_connected": f1_client.connected,
+        "f1_alive": f1_client.is_alive(),
+        "last_message_seconds_ago": round(time_since_message, 1) if time_since_message else None,
+        "has_timing_data": bool(f1_client.timing_data),
+        "has_session_info": bool(f1_client.session_info),
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 
@@ -308,6 +412,30 @@ async def get_car_data():
         return {}
 
 
+@app.get("/api/live/lap-count")
+async def get_lap_count():
+    """Get current lap count"""
+    try:
+        status_data = await f1_client.get_session_status()
+        return status_data.get('lap_count', {})
+        
+    except Exception as e:
+        logger.error(f"Error getting lap count: {e}")
+        return {}
+
+
+@app.get("/api/live/team-radio")
+async def get_team_radio():
+    """Get team radio messages"""
+    try:
+        radio_data = await f1_client.get_team_radio()
+        return radio_data if radio_data else []
+        
+    except Exception as e:
+        logger.error(f"Error getting team radio: {e}")
+        return []
+
+
 # ===== DRIVERS ENDPOINTS =====
 
 @app.get("/api/drivers")
@@ -423,6 +551,54 @@ async def get_constructor_standings():
 
 
 
+
+
+# ===== SSE (SERVER-SENT EVENTS) ENDPOINT =====
+# This is the f1-dash approach - simpler and more reliable than WebSocket for one-way streaming
+
+# Track SSE clients
+sse_clients: List[asyncio.Queue] = []
+
+@app.get("/api/sse")
+async def sse_endpoint():
+    """Server-Sent Events endpoint for real-time F1 data streaming (f1-dash style)"""
+    
+    async def event_generator():
+        # Create a queue for this client
+        queue = asyncio.Queue()
+        sse_clients.append(queue)
+        
+        try:
+            # Send initial state immediately
+            yield {
+                "event": "initial",
+                "data": JSONResponse(content=live_data_cache).body.decode()
+            }
+            logger.info("📤 Sent initial SSE snapshot to client")
+            
+            # Stream updates
+            while True:
+                try:
+                    # Wait for updates from the broadcast
+                    message = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield message
+                except asyncio.TimeoutError:
+                    # Send keep-alive ping
+                    yield {
+                        "event": "ping",
+                        "data": ""
+                    }
+        except asyncio.CancelledError:
+            sse_clients.remove(queue)
+            logger.info("SSE client disconnected")
+            raise
+        except Exception as e:
+            logger.error(f"SSE error: {e}")
+            if queue in sse_clients:
+                sse_clients.remove(queue)
+            raise
+    
+    return EventSourceResponse(event_generator())
 
 
 # ===== WEBSOCKET ENDPOINT =====

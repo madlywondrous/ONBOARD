@@ -19,6 +19,59 @@ logger = logging.getLogger(__name__)
 F1_SIGNALR_URL = "wss://livetiming.formula1.com/signalrcore"
 F1_NEGOTIATE_URL = "https://livetiming.formula1.com/signalrcore/negotiate"
 
+
+def deep_merge(base: dict, update: dict) -> dict:
+    """
+    Deep merge update dict into base dict - Based on f1-dash Rust implementation
+    F1 API sends incremental updates, not full snapshots!
+    
+    This properly handles:
+    - Nested object merging (recursive)
+    - Array extending
+    - Indexed array updates (for Lines with driver numbers as keys)
+    - Value replacement
+    """
+    if not isinstance(base, dict):
+        base = {}
+    if not isinstance(update, dict):
+        return update
+    
+    result = base.copy()
+    for key, value in update.items():
+        if key in result:
+            # Both are dicts - merge recursively
+            if isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = deep_merge(result[key], value)
+            # Both are lists - extend
+            elif isinstance(result[key], list) and isinstance(value, list):
+                result[key].extend(value)
+            # Base is list, update is dict with numeric keys (indexed updates)
+            elif isinstance(result[key], list) and isinstance(value, dict):
+                for idx_key, idx_value in value.items():
+                    try:
+                        idx = int(idx_key)
+                        if idx < len(result[key]):
+                            if isinstance(result[key][idx], dict) and isinstance(idx_value, dict):
+                                result[key][idx] = deep_merge(result[key][idx], idx_value)
+                            else:
+                                result[key][idx] = idx_value
+                        else:
+                            result[key].append(idx_value)
+                    except ValueError:
+                        # Not a numeric index, treat as dict merge
+                        if not isinstance(result[key], dict):
+                            result[key] = {}
+                        result[key][idx_key] = idx_value
+            else:
+                # Replace with new value
+                result[key] = value
+        else:
+            # New key - add it
+            result[key] = value
+    
+    return result
+
+
 class F1LiveTimingClient:
     """Client for F1 Official Live Timing using SignalR Core"""
     
@@ -41,6 +94,7 @@ class F1LiveTimingClient:
         self.car_data = {}
         self.timing_app_data = {}  # Tyres, DRS, etc.
         self.timing_stats = {}  # Additional timing statistics
+        self.team_radio = []  # Team radio messages
         
         # Callbacks
         self.callbacks: Dict[str, list] = {}
@@ -77,21 +131,30 @@ class F1LiveTimingClient:
         self._t_last_message = time.time()
         
         try:
+            # Debug log to see what we're receiving
+            logger.debug(f"📨 Received message type: {type(msg)}")
+            
             if isinstance(msg, CompletionMessage):
-                # Process completion message
+                # Process completion message (initial subscription response)
+                logger.info(f"📦 Received completion message with {len(msg.result.keys())} topics")
                 for key in msg.result.keys():
                     self._process_data(key, msg.result[key])
                     
             elif isinstance(msg, list) and len(msg) > 0:
-                # Process list message
+                # Process list message (real-time updates)
+                logger.debug(f"📡 Received list with {len(msg)} items")
                 for item in msg:
                     if isinstance(item, list) and len(item) >= 2:
                         topic = item[0]
                         data = json.loads(item[1]) if isinstance(item[1], str) else item[1]
+                        logger.debug(f"🔄 Processing topic: {topic}")
                         self._process_data(topic, data)
+            else:
+                # Try to process as direct message
+                logger.debug(f"📬 Received unknown message format: {str(msg)[:100]}")
                         
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.error(f"Error processing message: {e}", exc_info=True)
     
     def _process_data(self, topic: str, data: Any):
         """Process data by topic"""
@@ -99,56 +162,89 @@ class F1LiveTimingClient:
             if topic == "SessionInfo":
                 self.session_info = data
                 self._trigger_callbacks('session', data)
+                logger.info(f"📋 Updated SessionInfo")
                 
             elif topic == "TimingData":
-                self.timing_data = data
+                # CRITICAL: F1 API sends incremental updates, not full snapshots!
+                # Must merge with existing data, not replace
+                if self.timing_data:
+                    self.timing_data = deep_merge(self.timing_data, data)
+                else:
+                    self.timing_data = data
                 self._trigger_callbacks('timing', data)
+                logger.debug(f"⏱️  Updated TimingData - {len(self.timing_data.get('Lines', {}))} drivers")
                 
             elif topic == "Position.z":
-                self.position_data = data
+                if self.position_data:
+                    self.position_data = deep_merge(self.position_data, data)
+                else:
+                    self.position_data = data
                 self._trigger_callbacks('position', data)
+                logger.debug(f"📍 Updated Position data")
                 
             elif topic == "WeatherData":
                 self.weather_data = data
                 self._trigger_callbacks('weather', data)
+                logger.debug(f"🌤️  Updated WeatherData")
                 
             elif topic == "DriverList":
                 self.driver_list = data
                 self._trigger_callbacks('drivers', data)
+                logger.info(f"👥 Updated DriverList - {len(data)} drivers")
                 
             elif topic == "RaceControlMessages":
                 if 'Messages' in data:
                     self.race_control_messages = data['Messages']
                 self._trigger_callbacks('race_control', data)
+                logger.debug(f"🚩 Updated RaceControl - {len(self.race_control_messages)} messages")
                 
             elif topic == "TrackStatus":
                 self.track_status = data
                 self._trigger_callbacks('track_status', data)
+                logger.debug(f"🏁 Updated TrackStatus: {data.get('Status', 'Unknown')}")
                 
             elif topic == "SessionData":
                 self.session_data = data
                 self._trigger_callbacks('session_data', data)
+                logger.debug(f"📊 Updated SessionData")
                 
             elif topic == "LapCount":
                 self.lap_count = data
                 self._trigger_callbacks('lap_count', data)
+                logger.info(f"🔢 Updated LapCount: {data.get('CurrentLap', '?')}/{data.get('TotalLaps', '?')}")
                 
             elif topic == "CarData.z":
-                self.car_data = data
+                if self.car_data:
+                    self.car_data = deep_merge(self.car_data, data)
+                else:
+                    self.car_data = data
                 self._trigger_callbacks('car_data', data)
+                logger.debug(f"🏎️  Updated CarData")
                 
             elif topic == "TimingAppData":
-                self.timing_app_data = data
+                if self.timing_app_data:
+                    self.timing_app_data = deep_merge(self.timing_app_data, data)
+                else:
+                    self.timing_app_data = data
                 self._trigger_callbacks('timing_app', data)
+                logger.debug(f"📱 Updated TimingAppData")
                 
             elif topic == "TimingStats":
                 self.timing_stats = data
                 self._trigger_callbacks('timing_stats', data)
+                logger.debug(f"📈 Updated TimingStats")
                 
-            logger.debug(f"Processed {topic} data")
+            elif topic == "TeamRadio":
+                if 'Captures' in data:
+                    self.team_radio = data['Captures']
+                self._trigger_callbacks('team_radio', data)
+                logger.debug(f"📻 Updated TeamRadio - {len(self.team_radio)} messages")
+            
+            else:
+                logger.debug(f"❓ Unknown topic: {topic}")
             
         except Exception as e:
-            logger.error(f"Error processing {topic}: {e}")
+            logger.error(f"Error processing {topic}: {e}", exc_info=True)
     
     def _trigger_callbacks(self, event_type: str, data: Any):
         """Trigger registered callbacks"""
@@ -259,6 +355,23 @@ class F1LiveTimingClient:
         self.connected = False
         logger.info("🏁 Disconnected from F1 Live Timing")
     
+    def is_alive(self):
+        """Check if connection is alive and receiving data"""
+        if not self.connected:
+            return False
+        if self._t_last_message is None:
+            return False
+        # Consider connection dead if no message in last 30 seconds
+        return (time.time() - self._t_last_message) < 30
+    
+    async def reconnect_if_needed(self):
+        """Reconnect if connection is dead"""
+        if not self.is_alive():
+            logger.warning("⚠️ Connection appears dead, reconnecting...")
+            self.disconnect()
+            await asyncio.sleep(2)
+            await self.connect()
+    
     # Data accessor methods
     async def get_session_info(self):
         """Get current session information"""
@@ -310,6 +423,10 @@ class F1LiveTimingClient:
     async def get_car_data(self):
         """Get car telemetry data"""
         return self.car_data
+    
+    async def get_team_radio(self):
+        """Get team radio messages"""
+        return self.team_radio
 
 
 # Global client instance

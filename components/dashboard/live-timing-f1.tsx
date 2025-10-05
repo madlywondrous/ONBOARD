@@ -1,14 +1,34 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useReducer } from "react"
+import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Trophy, Flag, Radio, Zap, Timer, Circle } from "lucide-react"
-import Image from "next/image"
+import { Trophy, Flag, Radio, Zap, Timer, Circle, Thermometer, Droplets, Wind, CloudRain, Info, AlertTriangle } from "lucide-react"
+import { useSSELiveData } from "@/hooks/use-sse-live-data"
 
 // Use relative URLs so Next.js rewrites can proxy to backend
 const API_BASE_URL = ""
+
+// Deep merge utility for incremental updates
+function deepMerge(target: any, source: any): any {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return source
+  }
+  
+  const output = { ...target }
+  for (const key in source) {
+    if (source.hasOwnProperty(key)) {
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+        output[key] = deepMerge(target[key] || {}, source[key])
+      } else {
+        output[key] = source[key]
+      }
+    }
+  }
+  return output
+}
 
 // F1 color coding for sectors (Official F1 Standards)
 const SECTOR_STATUS_COLORS: { [key: number]: string } = {
@@ -34,10 +54,12 @@ interface TimingLine {
   Retired?: boolean
   KnockedOut?: boolean
   NumberOfPitStops?: number
+  GapToLeader?: string | { Value: string }
+  IntervalToPositionAhead?: { Value: string }
   Sectors: Array<{
     Value: string
     Status: number
-    Segments: Array<{ Status: number }>
+    Segments: Array<{ Status: number } | number>
   }>
   BestLapTimes?: Array<{ Value: string }>
   Stats?: Array<{
@@ -56,6 +78,9 @@ interface Driver {
   driver_number: number
   name_acronym: string
   team_colour: string
+  // Also support F1 API format
+  Tla?: string
+  TeamColour?: string
 }
 
 interface TimingAppLine {
@@ -70,9 +95,15 @@ interface TimingAppLine {
 }
 
 interface SessionInfo {
-  Meeting: { Name: string }
+  Meeting: { 
+    Name: string
+    Location: string
+    Country: { Name: string; Code: string }
+  }
   Type: string
   status: string
+  StartDate?: string
+  EndDate?: string
 }
 
 interface RaceControlMessage {
@@ -81,6 +112,7 @@ interface RaceControlMessage {
   Flag?: string
   Scope?: string
   Sector?: number
+  Lap?: string
   Message: string
 }
 
@@ -89,91 +121,317 @@ interface TrackStatus {
   Message: string
 }
 
-export function LiveTimingF1() {
-  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null)
-  const [timingLines, setTimingLines] = useState<TimingLine[]>([])
-  const [drivers, setDrivers] = useState<{ [key: string]: Driver }>({})
-  const [tyreData, setTyreData] = useState<{ [key: string]: TimingAppLine }>({})
-  const [raceControl, setRaceControl] = useState<RaceControlMessage[]>([])
-  const [trackStatus, setTrackStatus] = useState<TrackStatus | null>(null)
-  const [loading, setLoading] = useState(true)
+// State management types
+type LiveDataState = {
+  drivers: { [key: string]: Driver }
+  timingLines: TimingLine[]
+  tyreData: { [key: string]: TimingAppLine }
+  raceControl: RaceControlMessage[]
+  sessionInfo: SessionInfo | null
+  trackStatus: TrackStatus | null
+  weather: WeatherData | null
+  positions: PositionData | null
+  carData: CarData | null
+  teamRadio: TeamRadioMessage[]
+  lapCounter: {CurrentLap: number; TotalLaps: number} | null
+  loading: boolean
+  lastUpdateTime: number
+}
 
-  console.log("🏁 LiveTimingF1 component rendered!", { loading, drivers: Object.keys(drivers).length, timingLines: timingLines.length })
+type LiveDataAction =
+  | { type: 'SET_INITIAL_DATA'; payload: Partial<LiveDataState> }
+  | { type: 'UPDATE_FROM_WEBSOCKET'; payload: any }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_DRIVERS'; payload: { [key: string]: Driver } }
 
-  useEffect(() => {
-    console.log("🏁 LiveTimingF1 mounted - fetching data...")
-    fetchInitialData()
-    const interval = setInterval(fetchLiveData, 1000)
-    return () => clearInterval(interval)
-  }, [])
+interface WeatherData {
+  AirTemp: string
+  Humidity: string
+  Pressure: string
+  Rainfall: string
+  TrackTemp: string
+  WindDirection: string
+  WindSpeed: string
+}
 
-  const fetchInitialData = async () => {
-    try {
-      const driversRes = await fetch(`${API_BASE_URL}/api/drivers`)
-      const driversData = await driversRes.json()
-      const driversMap: { [key: string]: Driver } = {}
-      driversData.forEach((d: Driver) => {
-        driversMap[d.driver_number.toString()] = d
-      })
-      setDrivers(driversMap)
-      await fetchLiveData()
-    } catch (error) {
-      console.error("Failed to fetch initial data:", error)
-    } finally {
-      setLoading(false)
+interface PositionData {
+  Position: {
+    [driverNumber: string]: {
+      X: number
+      Y: number
+      Z: number
+      Status: string
     }
   }
+}
 
-  const fetchLiveData = async () => {
-    try {
-      console.log('🏁 Fetching LIVE data from SignalR...')
+interface CarData {
+  Entries: {
+    [driverNumber: string]: {
+      Channels: {
+        "0": number[]  // RPM
+        "2": number[]  // Speed
+        "3": number[]  // Gear
+        "4": number[]  // Throttle
+        "5": number[]  // Brake
+        "45": number[] // DRS
+      }
+    }
+  }
+}
+
+interface TeamRadioMessage {
+  RacingNumber: string
+  Utc: string
+  Message: string
+  Path?: string  // Audio file path
+}
+
+// Reducer for atomic state updates
+function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveDataState {
+  switch (action.type) {
+    case 'SET_INITIAL_DATA':
+      return { ...state, ...action.payload, loading: false }
+    
+    case 'UPDATE_FROM_WEBSOCKET': {
+      const data = action.payload
+      const updates: Partial<LiveDataState> = {}
       
-      const [sessionRes, timingRes, tyreRes, rcRes, tsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/live/session`),
-        fetch(`${API_BASE_URL}/api/live/timing`),
-        fetch(`${API_BASE_URL}/api/live/timing-app`),
-        fetch(`${API_BASE_URL}/api/live/race-control`),
-        fetch(`${API_BASE_URL}/api/live/track-status`)
-      ])
-
-      const sessionData = await sessionRes.json()
-      console.log("🏁 Session data:", sessionData)
-      setSessionInfo(sessionData)
-
-      const timingData = await timingRes.json()
-      console.log("🏁 Timing data:", timingData)
-      if (timingData.Lines) {
-        const lines = Object.values(timingData.Lines) as TimingLine[]
-        const sorted = lines.sort((a, b) => 
+      console.log('🔄 REDUCER: Processing WebSocket update', {
+        hasSession: !!data.session,
+        hasTiming: !!data.timing,
+        hasLapCount: !!data.lap_count,
+        timingLinesCount: data.timing?.Lines ? Object.keys(data.timing.Lines).length : 0
+      })
+      
+      // Update session info
+      if (data.session) {
+        updates.sessionInfo = data.session
+        console.log('✅ REDUCER: Updated sessionInfo', data.session.Type, data.session.Meeting?.Name)
+      }
+      
+      // Update timing data - CRITICAL: Merge incrementally, don't replace!
+      if (data.timing?.Lines) {
+        // Deep merge timing lines to preserve all driver data
+        const mergedTiming = state.timingLines.length > 0
+          ? deepMerge({ Lines: state.timingLines.reduce((acc: any, line: TimingLine) => {
+              acc[line.RacingNumber] = line
+              return acc
+            }, {}) }, data.timing)
+          : data.timing
+        
+        const lines = Object.values(mergedTiming.Lines) as TimingLine[]
+        updates.timingLines = lines.sort((a, b) => 
           (parseInt(a.Position) || 999) - (parseInt(b.Position) || 999)
         )
-        console.log(`🏁 Sorted ${sorted.length} drivers`)
-        setTimingLines(sorted)
+        console.log('✅ REDUCER: Merged timingLines, count:', updates.timingLines.length)
       }
-
-      const tyreDataRes = await tyreRes.json()
-      console.log("🏁 Tyre data:", tyreDataRes)
-      if (tyreDataRes.Lines) {
-        const tyreMap: { [key: string]: TimingAppLine } = {}
-        Object.entries(tyreDataRes.Lines).forEach(([key, value]) => {
-          tyreMap[key] = value as TimingAppLine
+      
+      // Update lap counter - CRITICAL!
+      if (data.lap_count) {
+        updates.lapCounter = {
+          CurrentLap: data.lap_count.CurrentLap || 0,
+          TotalLaps: data.lap_count.TotalLaps || 0
+        }
+        console.log('✅ REDUCER: Updated lapCounter', updates.lapCounter)
+      }
+      
+      // Update timing app data (tyres, DRS)
+      if (data.timing_app_data) {
+        updates.tyreData = data.timing_app_data
+      }
+      
+      // Update weather
+      if (data.weather) {
+        updates.weather = data.weather
+      }
+      
+      // Update track status
+      if (data.track_status) {
+        updates.trackStatus = data.track_status
+      }
+      
+      // Update race control
+      if (data.race_control) {
+        updates.raceControl = Array.isArray(data.race_control) ? data.race_control.slice(-20) : []
+      }
+      
+      // Update team radio
+      if (data.team_radio) {
+        updates.teamRadio = Array.isArray(data.team_radio) ? data.team_radio.slice(-10) : []
+      }
+      
+      // Update positions
+      if (data.positions) {
+        updates.positions = data.positions
+      }
+      
+      // Update car data
+      if (data.car_data) {
+        updates.carData = data.car_data
+      }
+      
+      // Update drivers
+      if (data.drivers) {
+        const driversMap: { [key: string]: Driver } = {}
+        Object.entries(data.drivers).forEach(([key, value]) => {
+          driversMap[key] = value as Driver
         })
-        setTyreData(tyreMap)
+        updates.drivers = driversMap
       }
-
-      const rcData = await rcRes.json()
-      console.log("🏁 Race control data:", rcData)
-      setRaceControl(Array.isArray(rcData) ? rcData.slice(-5) : [])
-
-      const tsData = await tsRes.json()
-      console.log("🏁 Track status data:", tsData)
-      setTrackStatus(tsData)
-
-    } catch (error) {
-      console.error("❌ Failed to fetch live data:", error)
+      
+      return { ...state, ...updates, lastUpdateTime: Date.now() }
     }
+    
+    case 'SET_LOADING':
+      return { ...state, loading: action.payload }
+    
+    case 'SET_DRIVERS':
+      return { ...state, drivers: action.payload }
+    
+    default:
+      return state
   }
+}
 
+const initialState: LiveDataState = {
+  drivers: {},
+  timingLines: [],
+  tyreData: {},
+  raceControl: [],
+  sessionInfo: null,
+  trackStatus: null,
+  weather: null,
+  positions: null,
+  carData: null,
+  teamRadio: [],
+  lapCounter: null,
+  loading: true,
+  lastUpdateTime: 0
+}
+
+export function LiveTimingF1() {
+  const [state, dispatch] = useReducer(liveDataReducer, initialState)
+  const [timeRemaining, setTimeRemaining] = useState<string>('--:--:--')
+
+  // SSE connection for real-time updates (f1-dash style - simpler!)
+  const { data: sseData, connected: sseConnected, error: sseError } = useSSELiveData()
+
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('🎯 STATE CHANGED:', {
+      lapCounter: state.lapCounter,
+      timingLinesCount: state.timingLines.length,
+      sessionType: state.sessionInfo?.Type,
+      trackStatus: state.trackStatus?.Status,
+      weatherAirTemp: state.weather?.AirTemp
+    })
+  }, [state.lapCounter, state.timingLines.length, state.sessionInfo?.Type, state.trackStatus?.Status, state.weather?.AirTemp])
+
+  console.log("🏁 LiveTimingF1 component rendered!", { 
+    loading: state.loading, 
+    drivers: Object.keys(state.drivers).length, 
+    timingLines: state.timingLines.length,
+    lapCounter: state.lapCounter,
+    wsConnected: sseConnected,
+    sessionInfo: state.sessionInfo?.Type
+  })
+
+  // Handle SSE data updates
+  useEffect(() => {
+    if (sseData) {
+      console.log('📨📨📨 SSE data received:', {
+        hasSession: !!sseData?.session,
+        hasTiming: !!sseData?.timing,
+        hasLapCount: !!sseData?.lap_count,
+        currentLap: sseData?.lap_count?.CurrentLap,
+        totalLaps: sseData?.lap_count?.TotalLaps,
+        timingLinesKeys: sseData?.timing?.Lines ? Object.keys(sseData.timing.Lines).length : 0,
+      })
+      dispatch({ type: 'UPDATE_FROM_WEBSOCKET', payload: sseData })
+    }
+  }, [sseData])
+
+  // Handle SSE connection status
+  useEffect(() => {
+    if (sseConnected) {
+      console.log('✅✅✅ SSE CONNECTED - Real-time updates enabled!')
+      dispatch({ type: 'SET_LOADING', payload: false })
+    } else {
+      console.log('❌❌❌ SSE DISCONNECTED')
+    }
+  }, [sseConnected])
+
+  // Handle SSE errors
+  useEffect(() => {
+    if (sseError) {
+      console.error('❌❌❌ SSE ERROR:', sseError)
+    }
+  }, [sseError])
+
+  // Fetch drivers separately if needed (only once)
+  useEffect(() => {
+    if (Object.keys(state.drivers).length === 0) {
+      fetch(`${API_BASE_URL}/api/drivers`)
+        .then(res => res.json())
+        .then(data => {
+          const driversMap: { [key: string]: Driver } = {}
+          data.forEach((d: Driver) => {
+            driversMap[d.driver_number.toString()] = d
+          })
+          dispatch({ type: 'SET_DRIVERS', payload: driversMap })
+        })
+        .catch(err => console.error('Failed to fetch drivers:', err))
+    }
+  }, [state.drivers])
+
+  // Simple effect - just log when mounted
+  useEffect(() => {
+    console.log("🏁 LiveTimingF1 mounted - WebSocket will handle all real-time data")
+  }, [])
+
+  // Countdown timer effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const isLive = state.sessionInfo?.status === "live"
+      
+      if (state.sessionInfo?.EndDate && isLive) {
+        // Countdown for live session
+        const endTime = new Date(state.sessionInfo.EndDate).getTime()
+        const now = Date.now()
+        const diff = endTime - now
+        
+        if (diff > 0) {
+          const hours = Math.floor(diff / (1000 * 60 * 60))
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+          setTimeRemaining(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`)
+        } else {
+          setTimeRemaining('00:00:00')
+        }
+      } else if (state.sessionInfo?.StartDate && !isLive) {
+        // Countdown to next session
+        const startTime = new Date(state.sessionInfo.StartDate).getTime()
+        const now = Date.now()
+        const diff = startTime - now
+        
+        if (diff > 0) {
+          const hours = Math.floor(diff / (1000 * 60 * 60))
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+          setTimeRemaining(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`)
+        } else {
+          setTimeRemaining('--:--:--')
+        }
+      } else {
+        setTimeRemaining('--:--:--')
+      }
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [state.sessionInfo])
+
+  // Helper functions for rendering
   const getTyreColor = (compound: string): string => {
     switch (compound?.toUpperCase()) {
       case "SOFT": return "#FF0000"
@@ -198,7 +456,7 @@ export function LiveTimingF1() {
   }
 
   const getCurrentTyre = (racingNumber: string) => {
-    const driverTyreData = tyreData[racingNumber]
+    const driverTyreData = state.tyreData[racingNumber]
     if (!driverTyreData?.Stints || driverTyreData.Stints.length === 0) return null
     const currentStint = driverTyreData.Stints[driverTyreData.Stints.length - 1]
     return {
@@ -212,80 +470,218 @@ export function LiveTimingF1() {
     return SECTOR_STATUS_COLORS[status] || "#404040"
   }
 
-  if (loading) {
+  if (state.loading) {
     return <LiveTimingSkeleton />
   }
 
-  const isLive = sessionInfo?.status === "live"
+  const isLive = state.sessionInfo?.status === "live"
+
+  // Helper function to get country code from meeting name
+  const getCountryCode = (meetingName: string): string => {
+    const countryMap: { [key: string]: string } = {
+      'bahrain': 'bh', 'saudi arabia': 'sa', 'australia': 'au', 'japan': 'jp',
+      'china': 'cn', 'miami': 'us', 'emilia romagna': 'it', 'monaco': 'mc',
+      'canada': 'ca', 'spain': 'es', 'austria': 'at', 'great britain': 'gb',
+      'hungary': 'hu', 'belgium': 'be', 'netherlands': 'nl', 'italy': 'it',
+      'azerbaijan': 'az', 'singapore': 'sg', 'united states': 'us', 'mexico': 'mx',
+      'brazil': 'br', 'las vegas': 'us', 'qatar': 'qa', 'abu dhabi': 'ae'
+    }
+    const name = meetingName.toLowerCase()
+    for (const [key, code] of Object.entries(countryMap)) {
+      if (name.includes(key)) return code
+    }
+    return 'xx'
+  }
+
+  // Format session type for display
+  const formatSessionType = (type: string): string => {
+    if (!type) return 'N/A'
+    if (type.toLowerCase().includes('practice')) return type.replace('Practice', 'FP')
+    if (type.toLowerCase() === 'qualifying') return 'Qualifying'
+    if (type.toLowerCase() === 'sprint') return 'Sprint'
+    if (type.toLowerCase() === 'race') return 'Race'
+    return type
+  }
 
   return (
-    <div className="h-full bg-black overflow-hidden flex flex-col">
-      {/* Stats Cards - Updated with proper data */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 flex-shrink-0">
-        <Card className="bg-neutral-900 border-neutral-700">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider mb-1">SESSION</p>
-                <p className="text-sm font-bold text-white">{sessionInfo?.Type || "N/A"}</p>
+    <div className="h-full bg-black flex flex-col relative overflow-hidden">
+
+      {/* Stats Cards - Combined Session Info (2 cols) + Weather + Track Status */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3 flex-shrink-0">
+        {/* Combined Session Info Card - Spans 2 columns */}
+        <Card className="bg-neutral-900 border-neutral-700 sm:col-span-2">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              {/* LEFT SIDE: Flag + GP Name + Session Info */}
+              <div className="flex items-center gap-3 flex-1">
+                {/* Flag */}
+                {state.sessionInfo?.Meeting?.Name && (
+                  <div className="flex-shrink-0">
+                    <div className="w-16 h-12 relative">
+                      <Image
+                        src={`https://flagcdn.com/w80/${getCountryCode(state.sessionInfo.Meeting.Name)}.png`}
+                        alt={state.sessionInfo.Meeting.Name}
+                        width={64}
+                        height={48}
+                        className="object-cover rounded shadow-lg"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* GP Name + Session Info */}
+                <div className="flex flex-col flex-1">
+                  <h2 className="text-lg font-bold text-white tracking-wide leading-tight">
+                    {state.sessionInfo?.Meeting?.Name?.toUpperCase() || 'N/A'}
+                  </h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-sm text-neutral-400">
+                      {formatSessionType(state.sessionInfo?.Type || 'N/A')}
+                    </span>
+                    {/* Live Indicator */}
+                    <div className="flex items-center gap-1">
+                      <div className={`w-2 h-2 rounded-full ${
+                        isLive ? 'bg-red-500 animate-pulse' : 'bg-neutral-600'
+                      }`} />
+                      <span className={`text-xs font-bold ${
+                        isLive ? 'text-red-500' : 'text-neutral-600'
+                      }`}>
+                        {isLive ? 'LIVE' : 'OFFLINE'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <Timer className="w-5 h-5 text-blue-500 opacity-50" />
+
+              {/* MIDDLE: Session-specific Info (Laps for Race, Quali stages, or Session type) */}
+              <div className="flex flex-col items-center justify-center px-4 border-l border-r border-neutral-700">
+                {state.sessionInfo?.Type?.toLowerCase().includes('race') || state.sessionInfo?.Type?.toLowerCase().includes('sprint') ? (
+                  // Race/Sprint: Show lap counter
+                  <>
+                    <p className="text-xs text-neutral-400 tracking-wider mb-1">LAPS</p>
+                    <p className="text-2xl font-bold text-white tabular-nums">
+                      {state.lapCounter?.CurrentLap || 0}<span className="text-neutral-500">/{state.lapCounter?.TotalLaps || 0}</span>
+                    </p>
+                  </>
+                ) : state.sessionInfo?.Type?.toLowerCase().includes('qualifying') ? (
+                  // Qualifying: Show Q1/Q2/Q3 stages
+                  <>
+                    <p className="text-xs text-neutral-400 tracking-wider mb-1">STAGE</p>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        true ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
+                      }`}>Q1</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        false ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
+                      }`}>Q2</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        false ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
+                      }`}>Q3</span>
+                    </div>
+                  </>
+                ) : (
+                  // Practice: Show session type
+                  <>
+                    <p className="text-xs text-neutral-400 tracking-wider mb-1">SESSION</p>
+                    <p className="text-xl font-bold text-white">
+                      {formatSessionType(state.sessionInfo?.Type || 'N/A')}
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* RIGHT SIDE: Countdown Timer */}
+              <div className="flex flex-col items-end">
+                <p className="text-xs text-neutral-400 tracking-wider mb-1">
+                  {isLive ? 'TIME LEFT' : 'STARTS IN'}
+                </p>
+                <p className="text-2xl font-bold text-orange-500 tabular-nums font-mono">
+                  {timeRemaining}
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-neutral-900 border-neutral-700">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider mb-1">TIME LEFT</p>
-                <p className="text-sm font-bold text-orange-500">{sessionInfo?.status === "live" ? "LIVE" : "ENDED"}</p>
+          <CardContent className="p-4 flex flex-col justify-center h-full gap-1">
+            <div className="text-xs font-bold text-neutral-400 tracking-wider mb-1">WEATHER</div>
+            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1">
+                <span className="text-lg font-bold text-cyan-500 whitespace-nowrap">{state.weather?.AirTemp || "--"}°C</span>
+                <Thermometer className="w-6 h-6 text-cyan-500 flex-shrink-0" />
               </div>
-              <Circle className="w-5 h-5 text-orange-500 opacity-50" />
+              <div className="flex items-center gap-1">
+                <span className="text-lg font-bold text-cyan-400 whitespace-nowrap">{state.weather?.Humidity || "--"}%</span>
+                <Droplets className="w-6 h-6 text-cyan-400 flex-shrink-0" />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-lg font-bold text-cyan-300 whitespace-nowrap">{state.weather?.WindSpeed || "--"}m/s</span>
+                <Wind className="w-6 h-6 text-cyan-300 flex-shrink-0" />
+              </div>
             </div>
           </CardContent>
-        </Card>
-
-        <Card className="bg-neutral-900 border-neutral-700">
-          <CardContent className="p-3">
+        </Card>        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden relative">
+          {/* Gradient background based on track status - increased opacity */}
+          <div className={`absolute inset-0 opacity-30 ${
+            state.trackStatus?.Status === '1' || !state.trackStatus?.Status ? 'bg-gradient-to-r from-green-500/30 to-transparent' :
+            state.trackStatus?.Status === '2' ? 'bg-gradient-to-r from-yellow-500/30 to-transparent' :
+            state.trackStatus?.Status === '4' ? 'bg-gradient-to-r from-red-500/30 to-transparent' :
+            state.trackStatus?.Status === '5' ? 'bg-gradient-to-r from-blue-500/30 to-transparent' :
+            state.trackStatus?.Status === '6' ? 'bg-gradient-to-r from-purple-500/30 to-transparent' :
+            'bg-gradient-to-r from-green-500/30 to-transparent'
+          }`} />
+          
+          <CardContent className="p-4 relative z-10 flex flex-col justify-center h-full gap-1">
+            <div className="text-xs font-bold text-neutral-400 tracking-wider mb-1">TRACK STATUS</div>
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider mb-1">WEATHER</p>
-                <p className="text-sm font-bold text-cyan-500">DRY</p>
-              </div>
-              <Zap className="w-5 h-5 text-cyan-500 opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-neutral-900 border-neutral-700">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider mb-1">TRACK STATUS</p>
-                <p className="text-sm font-bold text-green-500">{trackStatus?.Message || "ALL CLEAR"}</p>
-              </div>
-              <Flag className="w-5 h-5 text-green-500 opacity-50" />
+              {/* Left: Track Temperature */}
+              {state.weather?.TrackTemp && (
+                <div className="flex items-center gap-1">
+                  <span className="text-lg font-bold text-orange-400 whitespace-nowrap">{state.weather.TrackTemp}°C</span>
+                  <Thermometer className="w-6 h-6 text-orange-400 flex-shrink-0" />
+                </div>
+              )}
+              
+              {/* Right: Track Status */}
+              <span className={`text-lg font-bold whitespace-nowrap ${
+                state.trackStatus?.Status === '1' || !state.trackStatus?.Status ? 'text-green-500' :
+                state.trackStatus?.Status === '2' ? 'text-yellow-500' :
+                state.trackStatus?.Status === '4' ? 'text-red-500' :
+                state.trackStatus?.Status === '5' ? 'text-blue-500' :
+                state.trackStatus?.Status === '6' ? 'text-purple-500' :
+                'text-green-500'
+              }`}>
+                {state.trackStatus?.Status === '1' || !state.trackStatus?.Status ? 'Track Clear' :
+                 state.trackStatus?.Status === '2' ? 'Yellow Flag' :
+                 state.trackStatus?.Status === '4' ? 'Red Flag' :
+                 state.trackStatus?.Status === '5' ? 'Safety Car' :
+                 state.trackStatus?.Status === '6' ? 'VSC' :
+                 state.trackStatus?.Message || 'Track Clear'}
+              </span>
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Main Grid - Aligned with Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 flex-1 min-h-0">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 flex-shrink-0">
         {/* Timing Tower - Takes 3 columns (same as first 3 stats cards) */}
-        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-3 flex flex-col">
+        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-3 flex flex-col" style={{ height: 'calc(100vh - 178px)' }}>
           <CardContent className="p-0 flex flex-col flex-1 min-h-0">
             {/* Header Row */}
-            <div className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 flex items-center gap-2.5 text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0">
+            <div className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 flex items-center gap-2 text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0">
               <div className="w-10 text-center">POS</div>
               <div className="w-12">DRV</div>
-              <div className="w-20 text-center">TYRE</div>
               <div className="w-16">GAP</div>
+              <div className="w-20 text-center">TYRE</div>
               <div className="w-16 text-center">STATUS</div>
               <div className="w-12 text-center">DRS</div>
               <div className="w-20">LAP TIME</div>
-              <div className="flex gap-2.5">
+              <div className="flex gap-2">
                 <div className="w-28 text-center">S1</div>
                 <div className="w-28 text-center">S2</div>
                 <div className="w-28 text-center">S3</div>
@@ -295,10 +691,31 @@ export function LiveTimingF1() {
             </div>
 
             <div className="flex-1 overflow-y-auto timing-scroll">
-              {timingLines.map((line, idx) => {
-                const driver = drivers[line.RacingNumber]
-                const teamColor = driver?.team_colour || "666666"
-                const currentTyre = getCurrentTyre(line.RacingNumber)
+              {!state.timingLines || state.timingLines.length === 0 ? (
+                <div className="p-8 text-center text-neutral-400">
+                  <p className="text-2xl mb-2">⏳</p>
+                  <p>No timing data available</p>
+                  <p className="text-xs mt-2">State has {state.timingLines?.length || 0} timing lines</p>
+                </div>
+              ) : (
+                state.timingLines.map((line: TimingLine, idx: number) => {
+                  const driver = state.drivers[line.RacingNumber]
+                  const teamColor = driver?.team_colour || driver?.TeamColour || "666666"
+                  const currentTyre = getCurrentTyre(line.RacingNumber)
+
+                  // Debug log for first driver to see data structure
+                  if (idx === 0) {
+                    console.log(`🏁 First driver (${line.RacingNumber}) full data:`, {
+                      position: line.Position,
+                      racingNumber: line.RacingNumber,
+                      driverExists: !!driver,
+                      sectors: line.Sectors,
+                      speeds: line.Speeds,
+                      stats: line.Stats,
+                      gapToLeader: line.GapToLeader,
+                      intervalToPositionAhead: line.IntervalToPositionAhead
+                    })
+                  }
 
                 return (
                   <div
@@ -307,7 +724,7 @@ export function LiveTimingF1() {
                     style={{ borderLeft: `4px solid #${teamColor}` }}
                   >
                     {/* Single Row Layout - Compact */}
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
                       {/* Position */}
                       <div className="text-3xl font-bold text-white w-10 text-center flex-shrink-0">
                         {line.Position}
@@ -318,7 +735,43 @@ export function LiveTimingF1() {
                         className="px-2 py-1 rounded font-bold text-sm flex-shrink-0 w-12 text-center"
                         style={{ backgroundColor: `#${teamColor}`, color: '#000' }}
                       >
-                        {driver?.name_acronym || line.RacingNumber}
+                        {driver?.name_acronym || driver?.Tla || line.RacingNumber}
+                      </div>
+
+                      {/* Gap/Interval - Left Aligned */}
+                      <div className="flex flex-col items-start justify-center w-16 flex-shrink-0">
+                        {idx === 0 ? (
+                          <div className="text-xs font-mono text-white font-bold">LEAD</div>
+                        ) : (
+                          <>
+                            {/* Interval to car ahead */}
+                            <div className="text-sm font-mono text-white font-bold leading-none">
+                              {(() => {
+                                // Try multiple possible locations for interval data
+                                const gapToLeader = line.GapToLeader
+                                const intervalValue = typeof gapToLeader === 'string' ? gapToLeader : gapToLeader?.Value
+                                const interval = intervalValue ||
+                                               line.IntervalToPositionAhead?.Value ||
+                                               line.Stats?.[0]?.TimeDifftoPositionAhead ||
+                                               line.Stats?.[1]?.TimeDifftoPositionAhead ||
+                                               "---"
+                                return interval
+                              })()}
+                            </div>
+                            {/* Gap to leader */}
+                            <div className="text-[10px] font-mono text-neutral-500 leading-none mt-0.5">
+                              {(() => {
+                                const gapToLeader = line.GapToLeader
+                                const gapValue = typeof gapToLeader === 'object' ? gapToLeader?.Value : null
+                                const gap = gapValue ||
+                                           line.Stats?.[0]?.TimeDiffToFastest ||
+                                           line.Stats?.[1]?.TimeDiffToFastest ||
+                                           "---"
+                                return gap
+                              })()}
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Tire Section - Compact */}
@@ -348,24 +801,6 @@ export function LiveTimingF1() {
                           </>
                         ) : (
                           <div className="text-xs text-neutral-600">---</div>
-                        )}
-                      </div>
-
-                      {/* Gap/Interval - Left Aligned */}
-                      <div className="flex flex-col items-start justify-center w-16 flex-shrink-0">
-                        {idx === 0 ? (
-                          <div className="text-xs font-mono text-white font-bold">LEAD</div>
-                        ) : (
-                          <>
-                            {/* Interval to car ahead */}
-                            <div className="text-sm font-mono text-white font-bold leading-none">
-                              {line.Stats?.[1]?.TimeDifftoPositionAhead || line.Stats?.[0]?.TimeDiffToFastest || "---"}
-                            </div>
-                            {/* Gap to leader */}
-                            <div className="text-[10px] font-mono text-neutral-500 leading-none mt-0.5">
-                              {line.Stats?.[1]?.TimeDiffToFastest || line.Stats?.[0]?.TimeDiffToFastest || "---"}
-                            </div>
-                          </>
                         )}
                       </div>
 
@@ -400,7 +835,7 @@ export function LiveTimingF1() {
                       {/* DRS Indicator */}
                       <div className="w-12 flex items-center justify-center flex-shrink-0">
                         {(() => {
-                          const drsStatus = tyreData[line.RacingNumber]?.DRS?.Status || 0
+                          const drsStatus = state.tyreData[line.RacingNumber]?.DRS?.Status || 0
                           const isDrsActive = drsStatus >= 1 // 1=available, 2=open
                           return (
                             <div 
@@ -437,36 +872,46 @@ export function LiveTimingF1() {
                       </div>
 
                       {/* Sector Times - S1, S2, S3 with track segment indicators */}
-                      <div className="flex gap-2.5">
+                      <div className="flex gap-2">
                         {[0, 1, 2].map((sectorIdx) => {
                           const sector = line.Sectors?.[sectorIdx]
+                          
+                          // Debug log for first driver
+                          if (idx === 0 && sectorIdx === 0) {
+                            console.log(`🏁 Sector data for driver ${line.RacingNumber}:`, {
+                              sectors: line.Sectors,
+                              sector0: line.Sectors?.[0],
+                              hasSegments: !!sector?.Segments,
+                              segmentCount: sector?.Segments?.length
+                            })
+                          }
                           
                           return (
                             <div key={sectorIdx} className="flex flex-col items-start w-28 flex-shrink-0">
                               {/* Track segments indicator bar */}
                               <div className="w-full h-2 flex gap-0.5 mb-2">
-                                {sector?.Segments?.map((segment, segIdx) => {
-                                  const segColor = getSectorColor(segment.Status)
-                                  return (
-                                    <div
-                                      key={segIdx}
-                                      className="flex-1 h-full rounded-sm"
-                                      style={{ backgroundColor: segColor }}
-                                    />
-                                  )
-                                }) || <div className="w-full h-full rounded-full bg-neutral-700" />}
+                                {sector?.Segments && sector.Segments.length > 0 ? (
+                                  sector.Segments.map((segment, segIdx) => {
+                                    const segStatus = typeof segment === 'number' ? segment : segment.Status
+                                    const segColor = getSectorColor(segStatus)
+                                    return (
+                                      <div
+                                        key={segIdx}
+                                        className="flex-1 h-full rounded-sm"
+                                        style={{ backgroundColor: segColor }}
+                                      />
+                                    )
+                                  })
+                                ) : (
+                                  <div className="w-full h-full rounded-full bg-neutral-700" />
+                                )}
                               </div>
                               
                               {/* Best and Current times side by side */}
                               <div className="flex items-center gap-3">
                                 {/* Best sector time (larger) */}
-                                <div className="text-base font-mono text-white font-bold leading-none">
-                                  {sector?.Value || "---"}
-                                </div>
-                                
-                                {/* Current sector time (medium) */}
                                 <div 
-                                  className="text-xs font-mono leading-none"
+                                  className="text-base font-mono font-bold leading-none"
                                   style={{ color: getSectorColor(sector?.Status || 0) }}
                                 >
                                   {sector?.Value || "---"}
@@ -529,59 +974,103 @@ export function LiveTimingF1() {
                     </div>
                   </div>
                 )
-              })}
+              })
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Race Control - Takes 1 column (same as 4th stats card) */}
-        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-1 flex flex-col">
-          <CardHeader className="pb-3 border-b border-neutral-800 flex-shrink-0">
-            <CardTitle className="text-base font-bold text-white tracking-wider flex items-center gap-2">
-              <Flag className="w-4 h-4 text-orange-500" />
-              RACE CONTROL
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto timing-scroll">
-              {raceControl.length > 0 ? (
-                <div className="divide-y divide-neutral-800">
-                  {[...raceControl].reverse().map((msg, idx) => {
-                    const flagImage = msg.Flag?.toLowerCase().replace(/\s+/g, '-')
+        {/* Right Column: Race Control + Team Radio */}
+        <div className="sm:col-span-1 flex flex-col gap-3" style={{ height: 'calc(100vh - 178px)' }}>
+          {/* Race Control - Takes about 65% */}
+          <Card className="bg-neutral-900 border-neutral-700 overflow-hidden flex flex-col" style={{ flex: '0 0 65%' }}>
+            <CardHeader className="px-3 py-2 border-b border-neutral-800 flex-shrink-0">
+              <CardTitle className="text-[10px] font-bold text-neutral-400 tracking-wider">
+                RACE CONTROL
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+              <div className="flex-1 overflow-y-auto timing-scroll">
+              {state.raceControl.length > 0 ? (
+                <div className="py-2 px-3">
+                  {[...state.raceControl].reverse().map((msg: RaceControlMessage, idx: number) => {
+                    // Determine icon and color based on message type
+                    const getMessageIcon = () => {
+                      const message = msg.Message?.toLowerCase() || ''
+                      const flag = msg.Flag?.toLowerCase() || ''
+                      
+                      if (flag === 'yellow' || message.includes('yellow')) {
+                        return { icon: AlertTriangle, color: 'text-yellow-500' }
+                      } else if (flag === 'green' || message.includes('green') || message.includes('clear')) {
+                        return { icon: Flag, color: 'text-green-500' }
+                      } else if (flag === 'red' || message.includes('red flag')) {
+                        return { icon: AlertTriangle, color: 'text-red-500' }
+                      } else if (message.includes('rain') || msg.Category === 'Weather') {
+                        return { icon: CloudRain, color: 'text-blue-400' }
+                      } else if (message.includes('drs')) {
+                        return { icon: Zap, color: 'text-purple-500' }
+                      } else {
+                        return { icon: Info, color: 'text-neutral-400' }
+                      }
+                    }
+                    
+                    const { icon: IconComponent, color } = getMessageIcon()
+                    
                     return (
-                      <div key={idx} className="p-3 hover:bg-neutral-800/50 transition-colors">
-                        <div className="flex items-start gap-3">
-                          {msg.Flag && (
-                            <Image
-                              src={`/image Resource/Flags /${flagImage}-flag.svg`}
-                              alt={msg.Flag}
-                              width={24}
-                              height={24}
-                              className="mt-0.5 flex-shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              {msg.Flag && (
-                                <Badge 
-                                  variant="outline" 
-                                  className={`text-[9px] px-1.5 py-0 ${
-                                    msg.Flag === 'YELLOW' ? 'border-yellow-500 text-yellow-500' :
-                                    msg.Flag === 'GREEN' ? 'border-green-500 text-green-500' :
-                                    msg.Flag === 'RED' ? 'border-red-500 text-red-500' :
-                                    'border-neutral-600 text-neutral-400'
-                                  }`}
-                                >
-                                  {msg.Flag}
-                                </Badge>
-                              )}
-                              <span className="text-[10px] text-neutral-500 font-mono">
-                                {new Date(msg.Utc).toLocaleTimeString()}
-                              </span>
-                            </div>
-                            <p className="text-xs text-neutral-300 leading-relaxed">
+                      <div key={idx} className="relative pl-7 pb-3 last:pb-1">
+                        {/* Timeline line */}
+                        {idx !== state.raceControl.length - 1 && (
+                          <div className="absolute left-[11px] top-5 bottom-0 w-px bg-neutral-800" />
+                        )}
+                        
+                        {/* Icon */}
+                        <div className={`absolute left-0 top-0.5 w-6 h-6 rounded-full bg-neutral-800 flex items-center justify-center ${color}`}>
+                          <IconComponent className="w-3.5 h-3.5" />
+                        </div>
+                        
+                        {/* Content */}
+                        <div className="space-y-1">
+                          {/* Header with flag badge and time */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {msg.Flag && (
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[9px] px-1.5 py-0 h-4 font-bold ${
+                                  msg.Flag === 'YELLOW' ? 'border-yellow-500 text-yellow-500 bg-yellow-500/10' :
+                                  msg.Flag === 'GREEN' ? 'border-green-500 text-green-500 bg-green-500/10' :
+                                  msg.Flag === 'RED' ? 'border-red-500 text-red-500 bg-red-500/10' :
+                                  msg.Flag === 'BLUE' ? 'border-blue-500 text-blue-500 bg-blue-500/10' :
+                                  'border-neutral-600 text-neutral-400 bg-neutral-800/50'
+                                }`}
+                              >
+                                {msg.Flag}
+                              </Badge>
+                            )}
+                            <span className="text-[10px] text-neutral-500 font-mono">
+                              {new Date(msg.Utc).toLocaleTimeString('en-US', { 
+                                hour12: true, 
+                                hour: '2-digit', 
+                                minute: '2-digit',
+                                second: '2-digit'
+                              })}
+                            </span>
+                            {msg.Lap && (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-neutral-600 text-neutral-400">
+                                {msg.Lap} Lap
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          {/* Message */}
+                          <div className="bg-neutral-800/30 rounded px-2 py-1.5">
+                            <p className="text-xs text-neutral-200 leading-tight uppercase tracking-wide">
                               {msg.Message}
                             </p>
+                            {msg.Sector && (
+                              <p className="text-[10px] text-neutral-500 mt-0.5">
+                                Sector: {msg.Sector}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -597,7 +1086,72 @@ export function LiveTimingF1() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Team Radio - Takes remaining height (~188px) */}
+        <Card className="bg-neutral-900 border-neutral-700 overflow-hidden flex flex-col flex-1">
+          <CardHeader className="px-3 py-2 border-b border-neutral-800 flex-shrink-0">
+            <CardTitle className="text-[10px] font-bold text-neutral-400 tracking-wider">
+              TEAM RADIO
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto timing-scroll">
+              {state.teamRadio.length > 0 ? (
+                <div className="divide-y divide-neutral-800">
+                  {state.teamRadio.map((radio: TeamRadioMessage, idx: number) => {
+                    const driver = state.drivers[radio.RacingNumber]
+                    const teamColor = driver?.team_colour || driver?.TeamColour || "666666"
+                    return (
+                      <div key={idx} className="p-2 hover:bg-neutral-800/50 transition-colors">
+                        <div className="flex items-start gap-2">
+                          <div 
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-white font-bold text-[9px] flex-shrink-0"
+                            style={{ backgroundColor: `#${teamColor}` }}
+                          >
+                            {driver?.name_acronym?.[0] || driver?.Tla?.[0] || radio.RacingNumber}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <span className="text-[9px] font-bold text-white">
+                                {driver?.name_acronym || driver?.Tla || `#${radio.RacingNumber}`}
+                              </span>
+                              <span className="text-[8px] text-neutral-500 font-mono">
+                                {new Date(radio.Utc).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <p className="text-[9px] text-neutral-300 leading-relaxed mb-1">
+                              "{radio.Message}"
+                            </p>
+                            {radio.Path && (
+                              <audio 
+                                controls 
+                                className="w-full h-5 mt-1"
+                                style={{ 
+                                  backgroundColor: '#171717',
+                                  borderRadius: '3px',
+                                  maxHeight: '20px'
+                                }}
+                              >
+                                <source src={radio.Path} type="audio/mpeg" />
+                              </audio>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-neutral-600">
+                  <p className="text-[10px]">No radio messages</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
+      </div>
+
     </div>
   )
 }
