@@ -57,11 +57,11 @@ interface TimingLine {
   GapToLeader?: string | { Value: string }
   IntervalToPositionAhead?: { Value: string }
   Sectors: Array<{
-    Value: string
-    Status: number
-    Segments: Array<{ Status: number } | number>
-  }>
-  BestLapTimes?: Array<{ Value: string }>
+    Value?: string
+    Status?: number
+    Segments?: Array<{ Status: number } | number>
+  } | null>
+  BestLapTimes?: Array<{ Value?: string }>
   Stats?: Array<{
     TimeDiffToFastest?: string
     TimeDifftoPositionAhead?: string
@@ -72,6 +72,7 @@ interface TimingLine {
     FL?: { Value: string }  // Finish line speed
     ST?: { Value: string }  // Speed trap
   }
+  LastLapTime?: { Value?: string } | string | null
 }
 
 interface Driver {
@@ -88,9 +89,29 @@ interface TimingAppLine {
     Compound: string
     New: string
     TotalLaps: number
+    StartLaps?: number
   }>
   DRS?: {
     Status: number  // 0=disabled, 1=available, 2=open
+  }
+  StatusText?: string
+  GridPos?: string
+}
+
+interface TimingStatsEntry {
+  PersonalBestLapTime?: {
+    Value?: string
+    Lap?: number
+  }
+  BestSectors?: Array<{
+    Value?: string
+    Lap?: number
+  }>
+}
+
+interface TimingStats {
+  Lines?: {
+    [driverNumber: string]: TimingStatsEntry
   }
 }
 
@@ -133,6 +154,7 @@ type LiveDataState = {
   positions: PositionData | null
   carData: CarData | null
   teamRadio: TeamRadioMessage[]
+  timingStats: TimingStats | null
   lapCounter: {CurrentLap: number; TotalLaps: number} | null
   loading: boolean
   lastUpdateTime: number
@@ -185,6 +207,198 @@ interface TeamRadioMessage {
   Utc: string
   Message: string
   Path?: string  // Audio file path
+  Url?: string
+}
+
+const isPlainObject = (value: unknown): value is Record<string, any> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+const sortKeys = (keys: string[]): string[] => {
+  return [...keys].sort((a, b) => {
+    const aNum = Number(a)
+    const bNum = Number(b)
+    const aIsNum = Number.isFinite(aNum)
+    const bIsNum = Number.isFinite(bNum)
+
+    if (aIsNum && bIsNum) {
+      return aNum - bNum
+    }
+
+    if (aIsNum) return -1
+    if (bIsNum) return 1
+    return a.localeCompare(b)
+  })
+}
+
+const normalizeCollection = (value: unknown): any[] => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (isPlainObject(value)) {
+    return sortKeys(Object.keys(value)).map((key) => value[key])
+  }
+  return []
+}
+
+const normalizeSegments = (segments: unknown): Array<{ Status: number } | number> => {
+  return normalizeCollection(segments)
+}
+
+const normalizeSectors = (sectors: unknown): Array<any | null> => {
+  if (!sectors) return []
+
+  const collection = normalizeCollection(sectors).map((sector: any) => {
+    if (!sector) return null
+    if (sector.Segments) {
+      return {
+        ...sector,
+        Segments: normalizeSegments(sector.Segments)
+      }
+    }
+    return sector
+  })
+
+  if (collection.length > 0) {
+    return [0, 1, 2].map((idx) => collection[idx] ?? null)
+  }
+
+  if (isPlainObject(sectors)) {
+    return ["0", "1", "2"].map((key) => {
+      const sector = (sectors as Record<string, any>)[key]
+      if (!sector) return null
+      return {
+        ...sector,
+        Segments: normalizeSegments(sector.Segments)
+      }
+    })
+  }
+
+  return []
+}
+
+const asNumber = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+const asBoolean = (value: unknown): boolean => {
+  if (typeof value === "boolean") return value
+  if (typeof value === "number") return value !== 0
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "true" || normalized === "1" || normalized === "yes") return true
+    if (normalized === "false" || normalized === "0" || normalized === "no") return false
+    return normalized.length > 0
+  }
+  return Boolean(value)
+}
+
+const normalizeTimingLine = (driverNumber: string, rawLine: Record<string, any> | undefined): TimingLine => {
+  const lineData = rawLine ?? {}
+  const normalizedSectors = normalizeSectors(lineData.Sectors)
+  const bestLapTimes = normalizeCollection(lineData.BestLapTimes)
+  const stats = normalizeCollection(lineData.Stats)
+  const pitStopsRaw = lineData.NumberOfPitStops ?? lineData.PitStops
+  const pitStops = asNumber(pitStopsRaw)
+  const positionSource = lineData.Position ?? lineData.Line ?? driverNumber
+  const lastLapTimeRaw = lineData.LastLapTime
+  const lastLapTime = typeof lastLapTimeRaw === "string"
+    ? { Value: lastLapTimeRaw }
+    : lastLapTimeRaw ?? null
+
+  return {
+    ...lineData,
+    RacingNumber: driverNumber,
+    Position: String(positionSource),
+    InPit: asBoolean(lineData.InPit),
+    PitOut: asBoolean(lineData.PitOut),
+    Stopped: asBoolean(lineData.Stopped),
+    Retired: asBoolean(lineData.Retired),
+    KnockedOut: asBoolean(lineData.KnockedOut),
+    NumberOfPitStops: pitStops,
+    GapToLeader: lineData.GapToLeader,
+    IntervalToPositionAhead: lineData.IntervalToPositionAhead,
+    Sectors: [0, 1, 2].map((idx) => normalizedSectors[idx] ?? null),
+    BestLapTimes: bestLapTimes,
+    Stats: stats,
+    Speeds: lineData.Speeds,
+    LastLapTime: lastLapTime
+  }
+}
+
+const mergeTimingLines = (existing: TimingLine[], incomingTiming: any): TimingLine[] => {
+  if (!incomingTiming && existing.length === 0) {
+    return []
+  }
+
+  const existingMap = existing.reduce<Record<string, any>>((acc, line) => {
+    if (!line?.RacingNumber) {
+      return acc
+    }
+    acc[line.RacingNumber] = line
+    return acc
+  }, {})
+
+  const merged = deepMerge({ Lines: existingMap }, incomingTiming || {})
+  const linesObject = (merged?.Lines ?? {}) as Record<string, any>
+
+  const normalizedLines = Object.entries(linesObject)
+    .filter(([driverNumber]) => !driverNumber.startsWith("_"))
+    .map(([driverNumber, lineData]) => normalizeTimingLine(driverNumber, lineData))
+
+  return normalizedLines.sort((a, b) => {
+    const positionA = asNumber(a.Position) ?? parseInt(a.Position ?? "", 10)
+    const positionB = asNumber(b.Position) ?? parseInt(b.Position ?? "", 10)
+    const safeA = Number.isFinite(positionA) ? Number(positionA) : 999
+    const safeB = Number.isFinite(positionB) ? Number(positionB) : 999
+    return safeA - safeB
+  })
+}
+
+const normalizeTimingAppDriverData = (driverData: any): TimingAppLine => {
+  const stints = normalizeCollection(driverData?.Stints).map((stint: any) => {
+    const totalLaps = asNumber(stint?.TotalLaps) ?? 0
+    const startLaps = asNumber(stint?.StartLaps)
+    const compound = stint?.Compound || "UNKNOWN"
+    const isNew = typeof stint?.New === "boolean" ? String(stint.New) : (stint?.New ?? "false")
+
+    return {
+      ...stint,
+      Compound: compound,
+      New: isNew,
+      TotalLaps: totalLaps,
+      StartLaps: startLaps
+    }
+  })
+
+  const drsStatus = asNumber(driverData?.DRS?.Status)
+
+  return {
+    ...driverData,
+    Stints: stints,
+    DRS: driverData?.DRS ? { Status: drsStatus ?? 0 } : undefined,
+    StatusText: driverData?.StatusText,
+    GridPos: driverData?.GridPos
+  }
+}
+
+const sanitizeTimingAppLines = (timingAppData: any): Record<string, TimingAppLine> => {
+  if (!timingAppData) return {}
+
+  const lines = timingAppData.Lines ?? timingAppData
+  if (!isPlainObject(lines)) return {}
+
+  return Object.entries(lines)
+    .filter(([driverNumber]) => !driverNumber.startsWith("_"))
+    .reduce<Record<string, TimingAppLine>>((acc, [driverNumber, driverData]) => {
+      if (!driverData) return acc
+      acc[driverNumber] = normalizeTimingAppDriverData(driverData)
+      return acc
+    }, {})
 }
 
 // Reducer for atomic state updates
@@ -211,20 +425,10 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
       }
       
       // Update timing data - CRITICAL: Merge incrementally, don't replace!
-      if (data.timing?.Lines) {
-        // Deep merge timing lines to preserve all driver data
-        const mergedTiming = state.timingLines.length > 0
-          ? deepMerge({ Lines: state.timingLines.reduce((acc: any, line: TimingLine) => {
-              acc[line.RacingNumber] = line
-              return acc
-            }, {}) }, data.timing)
-          : data.timing
-        
-        const lines = Object.values(mergedTiming.Lines) as TimingLine[]
-        updates.timingLines = lines.sort((a, b) => 
-          (parseInt(a.Position) || 999) - (parseInt(b.Position) || 999)
-        )
-        console.log('✅ REDUCER: Merged timingLines, count:', updates.timingLines.length)
+      if (data.timing) {
+        const mergedTimingLines = mergeTimingLines(state.timingLines, data.timing)
+        updates.timingLines = mergedTimingLines
+        console.log('✅ REDUCER: Merged timingLines, count:', mergedTimingLines.length)
       }
       
       // Update lap counter - CRITICAL!
@@ -238,7 +442,10 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
       
       // Update timing app data (tyres, DRS)
       if (data.timing_app_data) {
-        updates.tyreData = data.timing_app_data
+        const timingAppLines = sanitizeTimingAppLines(data.timing_app_data)
+        if (Object.keys(timingAppLines).length > 0) {
+          updates.tyreData = { ...state.tyreData, ...timingAppLines }
+        }
       }
       
       // Update weather
@@ -250,15 +457,28 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
       if (data.track_status) {
         updates.trackStatus = data.track_status
       }
+
+      if (data.timing_stats) {
+        const mergedStats = deepMerge(state.timingStats || {}, data.timing_stats)
+        updates.timingStats = mergedStats as TimingStats
+      }
       
       // Update race control
-      if (data.race_control) {
-        updates.raceControl = Array.isArray(data.race_control) ? data.race_control.slice(-20) : []
+      if (Array.isArray(data.race_control)) {
+        updates.raceControl = data.race_control.slice(-20)
       }
       
       // Update team radio
-      if (data.team_radio) {
-        updates.teamRadio = Array.isArray(data.team_radio) ? data.team_radio.slice(-10) : []
+      if (Array.isArray(data.team_radio)) {
+        const sortedRadio = [...data.team_radio]
+          .filter((entry) => entry && entry.Utc)
+          .sort((a: TeamRadioMessage, b: TeamRadioMessage) => {
+            const timeA = new Date(a.Utc).getTime()
+            const timeB = new Date(b.Utc).getTime()
+            return timeB - timeA
+          })
+          .slice(0, 10)
+        updates.teamRadio = sortedRadio
       }
       
       // Update positions
@@ -275,9 +495,10 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
       if (data.drivers) {
         const driversMap: { [key: string]: Driver } = {}
         Object.entries(data.drivers).forEach(([key, value]) => {
+          if (key.startsWith('_') || !value) return
           driversMap[key] = value as Driver
         })
-        updates.drivers = driversMap
+        updates.drivers = { ...state.drivers, ...driversMap }
       }
       
       return { ...state, ...updates, lastUpdateTime: Date.now() }
@@ -305,6 +526,7 @@ const initialState: LiveDataState = {
   positions: null,
   carData: null,
   teamRadio: [],
+  timingStats: null,
   lapCounter: null,
   loading: true,
   lastUpdateTime: 0
@@ -456,14 +678,29 @@ export function LiveTimingF1() {
   }
 
   const getCurrentTyre = (racingNumber: string) => {
-    const driverTyreData = state.tyreData[racingNumber]
+    const driverTyreData = state.tyreData?.[racingNumber]
     if (!driverTyreData?.Stints || driverTyreData.Stints.length === 0) return null
+
     const currentStint = driverTyreData.Stints[driverTyreData.Stints.length - 1]
+    const compound = currentStint?.Compound || "UNKNOWN"
+    const newFlag = currentStint?.New
+    const isNew = typeof newFlag === "string" ? newFlag.toLowerCase() === "true" : Boolean(newFlag)
+    const laps = typeof currentStint?.TotalLaps === "number" ? currentStint.TotalLaps : asNumber(currentStint?.TotalLaps) ?? 0
+
     return {
-      compound: currentStint.Compound,
-      isNew: currentStint.New === "true",
-      laps: currentStint.TotalLaps || 0
+      compound,
+      isNew,
+      laps
     }
+  }
+
+  const getTeamRadioSrc = (path?: string) => {
+    if (!path) return ""
+    const encoded = encodeURIComponent(path)
+    const base = API_BASE_URL.endsWith('/') && API_BASE_URL.length > 1
+      ? API_BASE_URL.slice(0, -1)
+      : API_BASE_URL
+    return `${base}/api/team-radio/proxy?url=${encoded}`
   }
 
   const getSegmentColor = (status: number): string => {
@@ -702,6 +939,29 @@ export function LiveTimingF1() {
                   const driver = state.drivers[line.RacingNumber]
                   const teamColor = driver?.team_colour || driver?.TeamColour || "666666"
                   const currentTyre = getCurrentTyre(line.RacingNumber)
+                  const driverTyreData = state.tyreData?.[line.RacingNumber]
+                  const totalStints = driverTyreData?.Stints?.length ?? 0
+                  const pitStopCount = line.NumberOfPitStops ?? (totalStints > 0 ? Math.max(totalStints - 1, 0) : 0)
+                  const drsStatus = driverTyreData?.DRS?.Status ?? 0
+                  const statusText = driverTyreData?.StatusText
+                  const timingStatsEntry = state.timingStats?.Lines?.[line.RacingNumber]
+                  const bestLapTime = timingStatsEntry?.PersonalBestLapTime?.Value
+                    || line.BestLapTimes?.[0]?.Value
+                    || "---"
+                  const lastLapTime = (() => {
+                    if (typeof line.LastLapTime === 'string') {
+                      return line.LastLapTime
+                    }
+                    if (line.LastLapTime?.Value) {
+                      return line.LastLapTime.Value
+                    }
+                    const s1 = parseFloat(line.Sectors?.[0]?.Value || "0")
+                    const s2 = parseFloat(line.Sectors?.[1]?.Value || "0")
+                    const s3 = parseFloat(line.Sectors?.[2]?.Value || "0")
+                    const total = s1 + s2 + s3
+                    return total > 0 ? total.toFixed(3) : "---"
+                  })()
+                  const bestSectors = normalizeCollection(timingStatsEntry?.BestSectors || [])
 
                   // Debug log for first driver to see data structure
                   if (idx === 0) {
@@ -792,7 +1052,7 @@ export function LiveTimingF1() {
                             {/* Pit stops and laps count */}
                             <div className="flex flex-col items-start leading-none">
                               <div className="text-[10px] text-white font-bold">
-                                {line.NumberOfPitStops || 0}PIT
+                                {pitStopCount}PIT
                               </div>
                               <div className="text-[10px] text-white font-bold mt-0.5">
                                 {currentTyre.laps}LAP
@@ -828,6 +1088,13 @@ export function LiveTimingF1() {
                               </div>
                             )
                           }
+                          if (statusText) {
+                            return (
+                              <div className="px-2 py-1.5 rounded border border-neutral-700 font-bold text-[10px] text-neutral-400 bg-neutral-800/50">
+                                {statusText.toUpperCase()}
+                              </div>
+                            )
+                          }
                           return null
                         })()}
                       </div>
@@ -835,17 +1102,20 @@ export function LiveTimingF1() {
                       {/* DRS Indicator */}
                       <div className="w-12 flex items-center justify-center flex-shrink-0">
                         {(() => {
-                          const drsStatus = state.tyreData[line.RacingNumber]?.DRS?.Status || 0
-                          const isDrsActive = drsStatus >= 1 // 1=available, 2=open
+                          const isDrsAvailable = drsStatus >= 1
+                          const drsIsOpen = drsStatus === 2
+                          const drsLabel = drsIsOpen ? 'OPEN' : isDrsAvailable ? 'READY' : 'DRS'
                           return (
                             <div 
                               className={`px-2 py-1.5 rounded border font-bold text-[10px] ${
-                                isDrsActive 
-                                  ? 'border-green-500 text-green-500 bg-green-500/10' 
-                                  : 'border-neutral-700 text-neutral-700 bg-neutral-700/10'
+                                drsIsOpen
+                                  ? 'border-purple-500 text-purple-400 bg-purple-500/10'
+                                  : isDrsAvailable 
+                                    ? 'border-green-500 text-green-500 bg-green-500/10' 
+                                    : 'border-neutral-700 text-neutral-700 bg-neutral-700/10'
                               }`}
                             >
-                              DRS
+                              {drsLabel}
                             </div>
                           )
                         })()}
@@ -855,19 +1125,11 @@ export function LiveTimingF1() {
                       <div className="flex flex-col items-start justify-center w-20 flex-shrink-0">
                         {/* Best Lap Time */}
                         <div className="text-sm font-mono text-white font-bold leading-none">
-                          {line.BestLapTimes?.[0]?.Value || "---"}
+                          {bestLapTime}
                         </div>
                         {/* Last Lap Time */}
                         <div className="text-[10px] font-mono text-neutral-500 leading-none mt-0.5">
-                          {line.Sectors?.[2]?.Value ? (
-                            (() => {
-                              const s1 = parseFloat(line.Sectors[0]?.Value || "0")
-                              const s2 = parseFloat(line.Sectors[1]?.Value || "0")
-                              const s3 = parseFloat(line.Sectors[2]?.Value || "0")
-                              const lastLap = s1 + s2 + s3
-                              return lastLap > 0 ? `${lastLap.toFixed(3)}` : "---"
-                            })()
-                          ) : "---"}
+                          {lastLapTime}
                         </div>
                       </div>
 
@@ -875,6 +1137,11 @@ export function LiveTimingF1() {
                       <div className="flex gap-2">
                         {[0, 1, 2].map((sectorIdx) => {
                           const sector = line.Sectors?.[sectorIdx]
+                          const bestSectorValue = bestSectors?.[sectorIdx]?.Value
+                            || (sector as any)?.BestLapTime?.Value
+                            || (sector as any)?.BestTime?.Value
+                            || (sector as any)?.PersonalBest?.Value
+                          const currentSectorValue = sector?.Value || "---"
                           
                           // Debug log for first driver
                           if (idx === 0 && sectorIdx === 0) {
@@ -908,13 +1175,16 @@ export function LiveTimingF1() {
                               </div>
                               
                               {/* Best and Current times side by side */}
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-baseline gap-2">
                                 {/* Best sector time (larger) */}
                                 <div 
                                   className="text-base font-mono font-bold leading-none"
                                   style={{ color: getSectorColor(sector?.Status || 0) }}
                                 >
-                                  {sector?.Value || "---"}
+                                  {bestSectorValue || "---"}
+                                </div>
+                                <div className="text-[10px] font-mono text-neutral-500 leading-none">
+                                  {currentSectorValue}
                                 </div>
                               </div>
                             </div>
@@ -931,6 +1201,17 @@ export function LiveTimingF1() {
                             { label: 'I2', value: parseFloat(line.Speeds?.I2?.Value || '0') },
                             { label: 'FL', value: parseFloat(line.Speeds?.FL?.Value || '0') }
                           ]
+                          const telemetryChannels = state.carData?.Entries?.[line.RacingNumber]?.Channels
+                          const liveSpeed = telemetryChannels?.["2"]?.length
+                            ? telemetryChannels["2"][telemetryChannels["2"].length - 1]
+                            : 0
+
+                          if (typeof liveSpeed === 'number' && liveSpeed > 0) {
+                            const finishLineIndex = speeds.findIndex((entry) => entry.label === 'FL')
+                            if (finishLineIndex >= 0 && speeds[finishLineIndex].value <= 0) {
+                              speeds[finishLineIndex] = { ...speeds[finishLineIndex], value: liveSpeed }
+                            }
+                          }
                           const maxSpeed = Math.max(...speeds.map(s => s.value), 1)
                           
                           return speeds.map((speed, idx) => {
@@ -1101,6 +1382,8 @@ export function LiveTimingF1() {
                   {state.teamRadio.map((radio: TeamRadioMessage, idx: number) => {
                     const driver = state.drivers[radio.RacingNumber]
                     const teamColor = driver?.team_colour || driver?.TeamColour || "666666"
+                    const sourcePath = typeof radio.Path === 'string' ? radio.Path : (typeof radio.Url === 'string' ? radio.Url : undefined)
+                    const audioSrc = getTeamRadioSrc(sourcePath)
                     return (
                       <div key={idx} className="p-2 hover:bg-neutral-800/50 transition-colors">
                         <div className="flex items-start gap-2">
@@ -1122,9 +1405,11 @@ export function LiveTimingF1() {
                             <p className="text-[9px] text-neutral-300 leading-relaxed mb-1">
                               "{radio.Message}"
                             </p>
-                            {radio.Path && (
+                            {audioSrc && (
                               <audio 
                                 controls 
+                                preload="none"
+                                crossOrigin="anonymous"
                                 className="w-full h-5 mt-1"
                                 style={{ 
                                   backgroundColor: '#171717',
@@ -1132,7 +1417,7 @@ export function LiveTimingF1() {
                                   maxHeight: '20px'
                                 }}
                               >
-                                <source src={radio.Path} type="audio/mpeg" />
+                                <source src={audioSrc} type="audio/mpeg" />
                               </audio>
                             )}
                           </div>

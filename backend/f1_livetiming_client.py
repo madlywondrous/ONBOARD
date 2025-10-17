@@ -7,6 +7,8 @@ import json
 import logging
 import time
 import asyncio
+import base64
+import zlib
 from typing import Dict, Any, Callable, Optional
 from datetime import datetime
 import requests
@@ -18,6 +20,7 @@ logger = logging.getLogger(__name__)
 # F1 Live Timing API URLs
 F1_SIGNALR_URL = "wss://livetiming.formula1.com/signalrcore"
 F1_NEGOTIATE_URL = "https://livetiming.formula1.com/signalrcore/negotiate"
+TEAM_RADIO_BASE_URL = "https://livetiming.formula1.com/static"
 
 
 def deep_merge(base: dict, update: dict) -> dict:
@@ -126,6 +129,50 @@ class F1LiveTimingClient:
         
         self._t_last_message = None
         
+    def _decode_payload(self, topic: str, payload: Any) -> Any:
+        """Decode SignalR payload based on topic type."""
+        if payload is None:
+            return None
+
+        try:
+            # Handle zipped payloads (topics ending with .z)
+            if topic.endswith('.z'):
+                # Some zipped payloads come as dict with Data/Raw, others as bare base64 strings
+                if isinstance(payload, dict):
+                    payload_data = payload.get('Data') or payload.get('Raw')
+                    if payload_data is None:
+                        return payload
+                else:
+                    payload_data = payload
+
+                if isinstance(payload_data, str):
+                    try:
+                        decoded = base64.b64decode(payload_data)
+                        try:
+                            decompressed = zlib.decompress(decoded)
+                        except zlib.error:
+                            # Some feeds use gzip headers
+                            decompressed = zlib.decompress(decoded, 16 + zlib.MAX_WBITS)
+                        json_payload = decompressed.decode('utf-8')
+                        return json.loads(json_payload)
+                    except Exception as exc:
+                        logger.warning(f"Failed to decode zipped payload for {topic}: {exc}")
+                        return payload
+                return payload
+
+            # Non-zipped payload: try to parse JSON strings
+            if isinstance(payload, str):
+                try:
+                    return json.loads(payload)
+                except json.JSONDecodeError:
+                    return payload
+
+            return payload
+
+        except Exception as exc:
+            logger.error(f"Error decoding payload for {topic}: {exc}", exc_info=True)
+            return payload
+
     def _on_message(self, msg):
         """Handle incoming SignalR messages"""
         self._t_last_message = time.time()
@@ -137,8 +184,9 @@ class F1LiveTimingClient:
             if isinstance(msg, CompletionMessage):
                 # Process completion message (initial subscription response)
                 logger.info(f"📦 Received completion message with {len(msg.result.keys())} topics")
-                for key in msg.result.keys():
-                    self._process_data(key, msg.result[key])
+                for key, value in msg.result.items():
+                    decoded_value = self._decode_payload(key, value)
+                    self._process_data(key, decoded_value)
                     
             elif isinstance(msg, list) and len(msg) > 0:
                 # Process list message (real-time updates)
@@ -146,7 +194,7 @@ class F1LiveTimingClient:
                 for item in msg:
                     if isinstance(item, list) and len(item) >= 2:
                         topic = item[0]
-                        data = json.loads(item[1]) if isinstance(item[1], str) else item[1]
+                        data = self._decode_payload(topic, item[1])
                         logger.debug(f"🔄 Processing topic: {topic}")
                         self._process_data(topic, data)
             else:
@@ -235,9 +283,59 @@ class F1LiveTimingClient:
                 logger.debug(f"📈 Updated TimingStats")
                 
             elif topic == "TeamRadio":
-                if 'Captures' in data:
-                    self.team_radio = data['Captures']
-                self._trigger_callbacks('team_radio', data)
+                captures = []
+                if isinstance(data, dict):
+                    captures = data.get('Captures') or []
+                elif isinstance(data, list):
+                    captures = data
+
+                if captures:
+                    def normalize_capture(entry: Dict[str, Any]) -> Dict[str, Any]:
+                        capture_copy = entry.copy()
+                        raw_path = capture_copy.get('Path') or capture_copy.get('Url')
+                        if raw_path:
+                            path_str = str(raw_path)
+                            if not path_str.lower().startswith('http'):
+                                normalized_path = path_str.lstrip('/')
+                                if not normalized_path.lower().startswith('teamradio'):
+                                    normalized_path = f"TeamRadio/{normalized_path}"
+                                full_path = f"{TEAM_RADIO_BASE_URL}/{normalized_path}"
+                                capture_copy['Path'] = full_path
+                                capture_copy['Url'] = full_path
+                            else:
+                                capture_copy['Path'] = path_str
+                                capture_copy['Url'] = path_str
+                        return capture_copy
+
+                    normalized_existing: list[Dict[str, Any]] = []
+                    existing_paths: set[str] = set()
+                    for existing in self.team_radio:
+                        if not isinstance(existing, dict):
+                            continue
+                        normalized_existing_entry = normalize_capture(existing)
+                        normalized_existing.append(normalized_existing_entry)
+                        path_key = normalized_existing_entry.get('Path')
+                        if path_key:
+                            existing_paths.add(path_key)
+
+                    normalized_new: list[Dict[str, Any]] = []
+                    for capture in captures:
+                        if not isinstance(capture, dict):
+                            continue
+                        normalized_new.append(normalize_capture(capture))
+
+                    merged: list[Dict[str, Any]] = normalized_existing
+                    for capture in normalized_new:
+                        path_key = capture.get('Path')
+                        if path_key and path_key in existing_paths:
+                            continue
+                        merged.append(capture)
+                        if path_key:
+                            existing_paths.add(path_key)
+
+                    # Keep the most recent 100 entries to limit memory usage
+                    self.team_radio = merged[-100:]
+                self._trigger_callbacks('team_radio', self.team_radio)
                 logger.debug(f"📻 Updated TeamRadio - {len(self.team_radio)} messages")
             
             else:

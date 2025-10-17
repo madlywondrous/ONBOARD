@@ -3,20 +3,22 @@ ONBOARD F1 Dashboard - Backend API
 FastAPI server for live timing using Official F1 Live Timing API
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi import Response
 from sse_starlette.sse import EventSourceResponse
 from contextlib import asynccontextmanager
 import asyncio
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+import io
+import httpx
 from mock_data import MOCK_DRIVERS, MOCK_TEAMS
-from f1_livetiming_client import f1_client
+from f1_livetiming_client import f1_client, TEAM_RADIO_BASE_URL
 import logging
 
 # Configure logging
@@ -42,51 +44,112 @@ active_connections: List[WebSocket] = []
 sse_clients: List[asyncio.Queue] = []
 
 
+def _sanitize_timing_data(timing: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove metadata keys that start with '_' from timing lines."""
+    if not timing:
+        return {}
+
+    lines = timing.get('Lines')
+    if not isinstance(lines, dict):
+        return timing
+
+    filtered_lines = {
+        driver_num: line_data
+        for driver_num, line_data in lines.items()
+        if isinstance(line_data, dict) and not str(driver_num).startswith('_')
+    }
+
+    sanitized = dict(timing)
+    sanitized['Lines'] = filtered_lines
+    return sanitized
+
+
+def _sanitize_timing_app_data(app_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter timing app data to drop metadata keys."""
+    if not app_data:
+        return {}
+
+    lines = app_data.get('Lines')
+    if isinstance(lines, dict):
+        filtered = {
+            driver_num: line_data
+            for driver_num, line_data in lines.items()
+            if isinstance(line_data, dict) and not str(driver_num).startswith('_')
+        }
+        sanitized = dict(app_data)
+        sanitized['Lines'] = filtered
+        return sanitized
+
+    return app_data
+
+
+def _sanitize_driver_map(drivers: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(drivers, dict):
+        return {}
+    return {
+        driver_num: data
+        for driver_num, data in drivers.items()
+        if not str(driver_num).startswith('_')
+    }
+
+
 async def update_live_cache():
     """Update live data cache from F1 API"""
     try:
         logger.debug("🔄 Updating live cache...")
         
+        snapshot: Dict[str, Any] = {}
+
         # Get session info
         session_info = await f1_client.get_session_info()
         if session_info:
-            live_data_cache['session'] = session_info
+            snapshot['session'] = session_info
             logger.debug(f"✅ Session: {session_info.get('Type', 'Unknown')}")
         else:
             logger.warning("⚠️ No session info received")
-        
+
         # Get timing data
         timing = await f1_client.get_timing_data()
         if timing and timing.get('Lines'):
-            live_data_cache['timing'] = timing
-            logger.debug(f"✅ Timing: {len(timing.get('Lines', {}))} drivers")
+            sanitized_timing = _sanitize_timing_data(timing)
+            snapshot['timing'] = sanitized_timing
+            logger.debug(f"✅ Timing: {len(sanitized_timing.get('Lines', {}))} drivers")
         else:
             logger.warning(f"⚠️ No timing data: {timing}")
         
         # Get LAP COUNT - CRITICAL for showing current lap!
-        lap_count = f1_client.lap_count
-        if lap_count:
-            live_data_cache['lap_count'] = lap_count
+        lap_count = f1_client.lap_count or {}
+        if not lap_count.get('CurrentLap'):
+            try:
+                session_status = await f1_client.get_session_status()
+                fallback_lap = session_status.get('lap_count') if isinstance(session_status, dict) else None
+                if fallback_lap and fallback_lap.get('CurrentLap') is not None:
+                    lap_count = fallback_lap
+            except Exception as exc:
+                logger.debug(f"Lap count fallback failed: {exc}")
+
+        if lap_count and lap_count.get('CurrentLap') is not None:
+            snapshot['lap_count'] = lap_count
             logger.debug(f"✅ Lap: {lap_count.get('CurrentLap', '?')}/{lap_count.get('TotalLaps', '?')}")
         else:
-            logger.warning("⚠️ No lap count data")
+            logger.info("⚠️ No lap count data available yet")
         
         # Get timing app data (tyres, DRS, etc.)
         timing_app = f1_client.timing_app_data
         if timing_app:
-            live_data_cache['timing_app_data'] = timing_app
+            snapshot['timing_app_data'] = _sanitize_timing_app_data(timing_app)
             logger.debug(f"✅ Timing app data received")
         
         # Get positions
         positions = await f1_client.get_position_data()
         if positions:
-            live_data_cache['positions'] = positions
+            snapshot['positions'] = positions
             logger.debug(f"✅ Position data received")
         
         # Get weather
         weather = await f1_client.get_weather_data()
         if weather:
-            live_data_cache['weather'] = weather
+            snapshot['weather'] = weather
             logger.debug(f"✅ Weather: {weather.get('AirTemp', '?')}°C")
         else:
             logger.warning("⚠️ No weather data")
@@ -94,7 +157,7 @@ async def update_live_cache():
         # Get driver list
         drivers = await f1_client.get_driver_list()
         if drivers:
-            live_data_cache['drivers'] = drivers
+            snapshot['drivers'] = _sanitize_driver_map(drivers)
             logger.debug(f"✅ Drivers: {len(drivers)} drivers")
         else:
             logger.warning("⚠️ No driver list")
@@ -102,22 +165,41 @@ async def update_live_cache():
         # Get race control messages
         messages = await f1_client.get_race_control_messages()
         if messages:
-            live_data_cache['race_control'] = messages
+            snapshot['race_control'] = messages
             logger.debug(f"✅ Race control: {len(messages)} messages")
         
         # Get track status
         track_status = await f1_client.get_track_status()
         if track_status:
-            live_data_cache['track_status'] = track_status
+            snapshot['track_status'] = track_status
             logger.debug(f"✅ Track status: {track_status.get('Status', '?')}")
         
         # Get team radio
         team_radio = f1_client.team_radio
         if team_radio:
-            live_data_cache['team_radio'] = team_radio
+            snapshot['team_radio'] = team_radio[-25:]
             logger.debug(f"✅ Team radio: {len(team_radio)} messages")
+
+        # Ensure session info persists if available
+        if 'session' not in snapshot and live_data_cache.get('session'):
+            snapshot['session'] = live_data_cache['session']
+
+        # Car telemetry (speed, throttle, etc.)
+        car_data = await f1_client.get_car_data()
+        if car_data:
+            snapshot['car_data'] = car_data
+            logger.debug("✅ Car data received")
+
+        # Timing stats (purple sectors etc.)
+        timing_stats = await f1_client.get_timing_stats()
+        if timing_stats:
+            snapshot['timing_stats'] = timing_stats
         
-        live_data_cache['last_update'] = datetime.utcnow().isoformat()
+        snapshot['last_update'] = datetime.utcnow().isoformat()
+
+        # Replace live cache atomically to avoid partial states
+        live_data_cache.clear()
+        live_data_cache.update(snapshot)
         
         # Log cache summary
         logger.info(f"📦 Cache updated: session={bool(live_data_cache.get('session'))}, timing={len(live_data_cache.get('timing', {}).get('Lines', {}))}, lap={live_data_cache.get('lap_count')}")
@@ -434,6 +516,57 @@ async def get_team_radio():
     except Exception as e:
         logger.error(f"Error getting team radio: {e}")
         return []
+
+
+@app.get("/api/team-radio/proxy")
+async def proxy_team_radio(url: str, request: Request):
+    """Stream team radio audio through backend to avoid CORS issues."""
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing team radio URL")
+
+    if not url.startswith(TEAM_RADIO_BASE_URL):
+        raise HTTPException(status_code=400, detail="Invalid team radio source")
+
+    try:
+        range_header = request.headers.get("range")
+        upstream_headers = {"User-Agent": "ONBOARD-F1-Dashboard/2.0"}
+        if range_header:
+            upstream_headers["Range"] = range_header
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            upstream = await client.get(url, headers=upstream_headers)
+
+        if upstream.status_code not in (200, 206):
+            logger.warning(f"Team radio fetch failed ({upstream.status_code}) for {url}")
+            raise HTTPException(status_code=upstream.status_code, detail="Unable to fetch team radio")
+
+        response_headers = {
+            "Cache-Control": "public, max-age=30",
+            "Accept-Ranges": upstream.headers.get("accept-ranges", "bytes")
+        }
+
+        content_length = upstream.headers.get("content-length")
+        if content_length:
+            response_headers["Content-Length"] = content_length
+
+        content_range = upstream.headers.get("content-range")
+        if content_range:
+            response_headers["Content-Range"] = content_range
+
+        media_type = upstream.headers.get("content-type", "audio/mpeg")
+
+        return StreamingResponse(
+            io.BytesIO(upstream.content),
+            status_code=upstream.status_code,
+            media_type=media_type,
+            headers=response_headers
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error proxying team radio {url}: {exc}")
+        raise HTTPException(status_code=500, detail="Unable to proxy team radio")
 
 
 # ===== DRIVERS ENDPOINTS =====

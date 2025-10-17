@@ -18,6 +18,8 @@ export interface LiveData {
   race_control?: any;
   track_status?: any;
   team_radio?: any;
+  car_data?: any;
+  timing_stats?: any;
   last_update?: string;
 }
 
