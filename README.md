@@ -1,74 +1,43 @@
-# ONBOARD - Formula 1 Dashboard
+# ONBOARD - Formula 1 Live Dashboard
 
-A modern, dark-themed Formula 1 race calendar dashboard built with Next.js and TypeScript.
+A modern, real-time Formula 1 dashboard with live timing, driver standings, and race calendar. Built with Next.js 15, TypeScript, and Server-Sent Events (SSE) for real-time updates.
 
-## Features
+## Quick Start
 
-- **Interactive Sidebar**: Collapsible sidebar with smart open/close mechanics
-  - Opens instantly when hovering at the left edge
-  - Closes when cursor leaves (only if opened by cursor)
-  - Manual toggle button with custom icon
-  - Maintains state when opened manually
+### Prerequisites
+- Node.js 18+ and pnpm
+- Python 3.11+ with pip
 
-- **Dashboard Layout**: 
-  - Compact top bar with status indicators
-  - Navigation cards for different sections
-  - Live session indicator
-  - Formula 1 themed UI
-
-- **Typography**: Geist Mono font for a modern, technical aesthetic
-
-## Technical Stack
-
-- **Framework**: Next.js 14 (App Router)
-- **Styling**: Tailwind CSS
-- **UI Components**: shadcn/ui
-- **Icons**: Lucide React + custom icons
-- **Font**: Geist Mono
-
-## Project Structure
-
-```
-app/
-├── layout.tsx          # Global layout with Geist Mono font
-├── page.tsx           # Main dashboard with sidebar and navigation
-├── globals.css        # Global styles
-└── [sections]/        # Dashboard sections (agent-network, command-center, etc.)
-
-components/
-├── ui/               # shadcn/ui components
-└── theme-provider.tsx
-
-public/
-└── icons/
-    └── sidebar.png   # Custom sidebar toggle icon
-```
-
-## Sidebar Mechanics
-
-The sidebar features advanced open/close logic:
-
-1. **Cursor Hover**: Hovering near the left edge (first 20px) instantly opens the sidebar
-2. **Auto-Close**: Sidebar closes when cursor leaves, but only if it was opened by cursor hover
-3. **Manual Toggle**: Button toggle maintains sidebar state and prevents auto-close
-4. **Smart State**: Tracks how the sidebar was opened to determine appropriate close behavior
-
-## Development
-
+### 1. Install Backend Dependencies
 ```bash
-# Install dependencies
-pnpm install
-
-# Run development server
-pnpm dev
-
-# Build for production
-pnpm build
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-## Design Philosophy
+### 2. Start the Backend
+```bash
+cd backend
+python main.py
+# Server runs on http://localhost:8000
+```
 
-- **Dark Theme**: Professional, easy on the eyes for extended use
-- **Compact UI**: Efficient use of space while maintaining readability
-- **Interactive Elements**: Smooth transitions and responsive design
-- **Formula 1 Themed**: Racing-inspired aesthetics and terminology
+### 3. Install Frontend Dependencies
+```bash
+# In a new terminal
+cd frontend
+pnpm install
+```
+
+### 4. Start the Frontend
+```bash
+cd frontend
+pnpm dev
+# App runs on http://localhost:3000
+```
+
+## Architecture
+- Frontend: Next.js 15.5.2 (App Router), Tailwind CSS, shadcn/ui
+- Backend: FastAPI, Python 3.11+, SSE Broadcaster
+- Data Source: F1 Official Live Timing API (SignalR)
