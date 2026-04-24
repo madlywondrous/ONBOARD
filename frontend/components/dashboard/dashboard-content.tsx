@@ -12,10 +12,6 @@ const CalendarSection = dynamic(() => import("@/components/dashboard/calendar-se
   ssr: false,
   loading: () => <SectionSkeleton />
 })
-const StandingsSection = dynamic(() => import("@/components/dashboard/standings-section").then(mod => ({ default: mod.StandingsSection })), { 
-  ssr: false,
-  loading: () => <SectionSkeleton />
-})
 
 // Skeleton loading component
 function SectionSkeleton() {
@@ -34,7 +30,6 @@ function SectionSkeleton() {
 // Error fallback components
 const LiveErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Live" />
 const CalendarErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Calendar" />
-const StandingsErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Standings" />
 
 // Error fallback component
 function SectionErrorFallback({ error, section }: { error: Error; section: string }) {
@@ -75,14 +70,6 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
           <ErrorBoundary fallback={CalendarErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <CalendarSection />
-            </Suspense>
-          </ErrorBoundary>
-        )
-      case "standings":
-        return (
-          <ErrorBoundary fallback={StandingsErrorFallback}>
-            <Suspense fallback={<SectionSkeleton />}>
-              <StandingsSection />
             </Suspense>
           </ErrorBoundary>
         )

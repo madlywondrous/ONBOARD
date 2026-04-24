@@ -1,6 +1,5 @@
 """
 F1 Live Timing Client using Official F1 SignalR API
-Based on Fast-F1 implementation
 """
 
 import json

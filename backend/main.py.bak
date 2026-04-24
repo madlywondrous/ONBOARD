@@ -1198,6 +1198,17 @@ async def get_teams():
 
 # ===== STANDINGS ENDPOINTS =====
 
+@app.get("/api/standings/drivers")
+async def get_driver_standings():
+    """Get driver championship standings"""
+    return await get_driver_standings_data()
+
+
+@app.get("/api/standings/constructors")
+async def get_constructor_standings():
+    """Get constructor championship standings"""
+    return await get_constructor_standings_data()
+
 
 # ===== SCHEDULE ENDPOINTS (f1-dash compatible) =====
 

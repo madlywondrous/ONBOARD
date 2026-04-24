@@ -11,7 +11,6 @@ export interface NavigationItem {
 export const navigationItems: NavigationItem[] = [
   { id: "live", icon: Radio, label: "LIVE" },
   { id: "calendar", icon: Calendar, label: "SCHEDULE" },
-  { id: "standings", icon: Trophy, label: "STANDINGS" },
 ]
 
-export type DashboardSection = "live" | "calendar" | "standings"
+export type DashboardSection = "live" | "calendar"
