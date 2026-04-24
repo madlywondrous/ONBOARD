@@ -23,8 +23,6 @@ import httpx
 from tests.mock_data import (
     MOCK_DRIVERS,
     MOCK_TEAMS,
-    MOCK_DRIVER_STANDINGS,
-    MOCK_CONSTRUCTOR_STANDINGS,
 )
 from core.f1_livetiming_client import f1_client, TEAM_RADIO_BASE_URL
 from services.schedule_service import get_schedule, get_next_round
@@ -52,9 +50,6 @@ load_dotenv()
 API_VERSION = os.getenv("API_VERSION", "v1")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 F1_LIVETIMING_BASE = "https://livetiming.formula1.com"
-ERGAST_BASE_URL = os.getenv("ERGAST_BASE_URL", "https://ergast.com/api/f1")
-ERGAST_SEASON = os.getenv("ERGAST_SEASON", "current")
-STANDINGS_CACHE_TTL_SECONDS = int(os.getenv("STANDINGS_CACHE_TTL_SECONDS", "900"))
 OPENF1_BASE_URL = os.getenv("OPENF1_BASE_URL", "https://api.openf1.org/v1")
 CURRENT_SEASON_YEAR_ENV = os.getenv("CURRENT_SEASON_YEAR")
 
@@ -80,10 +75,6 @@ live_data_cache: Dict[str, Any] = {}
 active_connections: List[WebSocket] = []
 current_session_type: Optional[str] = None  # Track current session for adaptive polling
 
-standings_cache: Dict[str, Dict[str, Any]] = {
-    "drivers": {"timestamp": 0.0, "data": None},
-    "constructors": {"timestamp": 0.0, "data": None},
-}
 
 
 class SSEBroadcaster:
@@ -359,112 +350,11 @@ def _extract_max_completed_lap(timing: Dict[str, Any]) -> Optional[int]:
     return max(completed_laps) if completed_laps else None
 
 
-def _augment_points_gaps(items: List[Dict[str, Any]]) -> None:
-    """Populate gap metrics relative to the championship leader and previous position."""
-    if not items:
-        return
-
-    try:
-        leader_points = float(items[0].get("points", 0.0))
-    except (TypeError, ValueError):
-        leader_points = 0.0
-
-    previous_points: Optional[float] = None
-
-    for entry in items:
-        try:
-            points = float(entry.get("points", 0.0))
-        except (TypeError, ValueError):
-            points = 0.0
-
-        entry["points"] = points
-        entry["points_gap_to_leader"] = round(leader_points - points, 1)
-        if previous_points is None:
-            entry["points_gap_to_previous"] = 0.0
-        else:
-            entry["points_gap_to_previous"] = round(previous_points - points, 1)
-
-        previous_points = points
-
-
-def _build_driver_standing(entry: Dict[str, Any], fallback_position: int) -> Dict[str, Any]:
-    driver_info = entry.get("Driver", {}) or {}
-    constructors = entry.get("Constructors", []) or []
-    constructor_info = constructors[0] if constructors else {}
-
-    def _safe_int(value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return default
-
-    position = _safe_int(entry.get("position"), fallback_position)
-    points_raw = entry.get("points", 0.0)
-    try:
-        points = float(points_raw)
-    except (TypeError, ValueError):
-        points = 0.0
-
-    wins = _safe_int(entry.get("wins"))
-
-    full_name = (f"{driver_info.get('givenName', '')} {driver_info.get('familyName', '')}").strip()
-    code = driver_info.get("code") or driver_info.get("permanentNumber") or (driver_info.get("familyName", "")[:3].upper())
-
-    return {
-        "position": position,
-        "points": points,
-        "wins": wins,
-        "driver": {
-            "code": code,
-            "full_name": full_name,
-            "given_name": driver_info.get("givenName"),
-            "family_name": driver_info.get("familyName"),
-            "number": driver_info.get("permanentNumber"),
-            "nationality": driver_info.get("nationality"),
-        },
-        "constructor": {
-            "name": constructor_info.get("name"),
-            "constructor_id": constructor_info.get("constructorId"),
-            "nationality": constructor_info.get("nationality"),
-        },
-    }
-
-
-def _build_constructor_standing(entry: Dict[str, Any], fallback_position: int) -> Dict[str, Any]:
-    constructor_info = entry.get("Constructor", {}) or {}
-
-    def _safe_int(value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return default
-
-    position = _safe_int(entry.get("position"), fallback_position)
-    wins = _safe_int(entry.get("wins"))
-    points_raw = entry.get("points", 0.0)
-    try:
-        points = float(points_raw)
-    except (TypeError, ValueError):
-        points = 0.0
-
-    return {
-        "position": position,
-        "points": points,
-        "wins": wins,
-        "constructor": {
-            "name": constructor_info.get("name"),
-            "constructor_id": constructor_info.get("constructorId"),
-            "nationality": constructor_info.get("nationality"),
-        },
-    }
 
 
 def _resolve_current_season_year() -> int:
     if CURRENT_SEASON_YEAR_ENV and CURRENT_SEASON_YEAR_ENV.isdigit():
         return int(CURRENT_SEASON_YEAR_ENV)
-
-    if ERGAST_SEASON.isdigit():
-        return int(ERGAST_SEASON)
 
     return datetime.utcnow().year
 
@@ -523,131 +413,6 @@ async def _fetch_openf1_driver_list() -> Optional[List[Dict[str, Any]]]:
     logger.info("OpenF1 driver fallback used (%d drivers for %s)", len(sorted_entries), season_year)
     return sorted_entries
 
-
-async def _fetch_driver_standings_from_ergast() -> Optional[Dict[str, Any]]:
-    url = f"{ERGAST_BASE_URL}/{ERGAST_SEASON}/driverStandings.json"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, headers={"Accept": "application/json"})
-            response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        logger.error("Failed to fetch driver standings from Ergast: %s", exc)
-        return None
-
-    standings_lists = payload.get("MRData", {}).get("StandingsTable", {}).get("StandingsLists", [])
-    if not standings_lists:
-        logger.warning("Ergast driver standings response empty")
-        return None
-
-    current = standings_lists[0]
-    season = current.get("season", ERGAST_SEASON)
-    try:
-        round_number = int(current.get("round", 0))
-    except (TypeError, ValueError):
-        round_number = 0
-
-    driver_entries = current.get("DriverStandings", []) or []
-    standings: List[Dict[str, Any]] = []
-    for idx, entry in enumerate(driver_entries, start=1):
-        standings.append(_build_driver_standing(entry, idx))
-
-    _augment_points_gaps(standings)
-
-    return {
-        "season": season,
-        "round": round_number,
-        "standings": standings,
-    }
-
-
-async def _fetch_constructor_standings_from_ergast() -> Optional[Dict[str, Any]]:
-    url = f"{ERGAST_BASE_URL}/{ERGAST_SEASON}/constructorStandings.json"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, headers={"Accept": "application/json"})
-            response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        logger.error("Failed to fetch constructor standings from Ergast: %s", exc)
-        return None
-
-    standings_lists = payload.get("MRData", {}).get("StandingsTable", {}).get("StandingsLists", [])
-    if not standings_lists:
-        logger.warning("Ergast constructor standings response empty")
-        return None
-
-    current = standings_lists[0]
-    season = current.get("season", ERGAST_SEASON)
-    try:
-        round_number = int(current.get("round", 0))
-    except (TypeError, ValueError):
-        round_number = 0
-
-    constructor_entries = current.get("ConstructorStandings", []) or []
-    standings: List[Dict[str, Any]] = []
-    for idx, entry in enumerate(constructor_entries, start=1):
-        standings.append(_build_constructor_standing(entry, idx))
-
-    _augment_points_gaps(standings)
-
-    return {
-        "season": season,
-        "round": round_number,
-        "standings": standings,
-    }
-
-
-async def get_driver_standings_data() -> Dict[str, Any]:
-    cache_entry = standings_cache["drivers"]
-    now = time.time()
-    cached = cache_entry.get("data")
-    if cached and (now - cache_entry.get("timestamp", 0.0) < STANDINGS_CACHE_TTL_SECONDS):
-        return cached
-
-    data = await _fetch_driver_standings_from_ergast()
-    if not data or not data.get("standings"):
-        logger.info("Using mock driver standings data")
-        data = {
-            "season": "mock",
-            "round": 0,
-            "standings": copy.deepcopy(MOCK_DRIVER_STANDINGS),
-        }
-        _augment_points_gaps(data["standings"])
-        data["source"] = "mock"
-    else:
-        data["source"] = "ergast"
-
-    data["last_updated"] = datetime.utcnow().isoformat()
-    cache_entry["data"] = data
-    cache_entry["timestamp"] = now
-    return data
-
-
-async def get_constructor_standings_data() -> Dict[str, Any]:
-    cache_entry = standings_cache["constructors"]
-    now = time.time()
-    cached = cache_entry.get("data")
-    if cached and (now - cache_entry.get("timestamp", 0.0) < STANDINGS_CACHE_TTL_SECONDS):
-        return cached
-
-    data = await _fetch_constructor_standings_from_ergast()
-    if not data or not data.get("standings"):
-        logger.info("Using mock constructor standings data")
-        data = {
-            "season": "mock",
-            "round": 0,
-            "standings": copy.deepcopy(MOCK_CONSTRUCTOR_STANDINGS),
-        }
-        _augment_points_gaps(data["standings"])
-        data["source"] = "mock"
-    else:
-        data["source"] = "ergast"
-
-    data["last_updated"] = datetime.utcnow().isoformat()
-    cache_entry["data"] = data
-    cache_entry["timestamp"] = now
-    return data
 
 
 async def update_live_cache():
@@ -988,15 +753,6 @@ app.add_middleware(
 # GZip middleware for compressing responses
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Add middleware to prevent caching of live data
-@app.middleware("http")
-async def add_no_cache_headers(request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/api/live"):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    return response
 
 
 # ===== API ENDPOINTS =====
