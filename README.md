@@ -40,4 +40,4 @@ pnpm dev
 ## Architecture
 - Frontend: Next.js 15.5.2 (App Router), Tailwind CSS, shadcn/ui
 - Backend: FastAPI, Python 3.11+, SSE Broadcaster
-- Data Source: F1 Official Live Timing API (SignalR)
+- Data Source: F1 Official Live Timing API (SignalR).
