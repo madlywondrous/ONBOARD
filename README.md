@@ -15,21 +15,18 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
-
 ### 2. Start the Backend
 ```bash
 cd backend
 python main.py
 # Server runs on http://localhost:8000
 ```
-
 ### 3. Install Frontend Dependencies
 ```bash
 # In a new terminal
 cd frontend
 pnpm install
 ```
-
 ### 4. Start the Frontend
 ```bash
 cd frontend
