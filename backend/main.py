@@ -187,7 +187,7 @@ def _compute_top_level_diff(previous: Dict[str, Any], current: Dict[str, Any]) -
     
     # Critical keys that should ALWAYS be included if they exist
     # These change frequently during live sessions - ALWAYS send them to ensure updates
-    always_include_keys = {'timing', 'lap_count', 'weather', 'track_status', 'timing_app_data', 'positions', 'car_data', 'timing_stats'}
+    always_include_keys = {'timing', 'lap_count', 'weather', 'track_status', 'timing_app_data', 'positions', 'car_data', 'timing_stats', 'session_status'}
 
     for key, value in current.items():
         if key == 'last_update':
@@ -583,6 +583,41 @@ async def update_live_cache():
         if team_radio:
             snapshot['team_radio'] = team_radio[-25:]
 
+        # CRITICAL: Include SessionStatus so frontend knows if session is live
+        # SessionStatus.Status can be "Started", "Finished", "Finalised", "Ends"
+        session_status_data = _extract_task_result(session_status_res, "session_status") if 'session_status' not in locals() else session_status
+        if not isinstance(session_status_data, dict):
+            session_status_data = {}
+        
+        # Also get session_data for StatusSeries
+        session_data = f1_client.session_data
+        
+        # Determine live status from SessionStatus or SessionData
+        live_status = None
+        if isinstance(session_status_data, dict):
+            # get_session_status returns {"session_data": ..., "lap_count": ...}
+            sd = session_status_data.get('session_data', {})
+            if isinstance(sd, dict):
+                status_series = sd.get('StatusSeries', [])
+                if isinstance(status_series, list) and status_series:
+                    # Get the latest status
+                    latest = status_series[-1] if status_series else {}
+                    if isinstance(latest, dict):
+                        live_status = latest.get('SessionStatus') or latest.get('SesionStatus')
+        
+        # Fallback: check f1_client.session_data directly
+        if not live_status and isinstance(session_data, dict):
+            status_series = session_data.get('StatusSeries', [])
+            if isinstance(status_series, list) and status_series:
+                latest = status_series[-1] if status_series else {}
+                if isinstance(latest, dict):
+                    live_status = latest.get('SessionStatus') or latest.get('SesionStatus')
+        
+        # Include session_status in snapshot
+        snapshot['session_status'] = {
+            'Status': live_status or 'Unknown'
+        }
+
         # Ensure session info persists if available
         if 'session' not in snapshot and previous_state.get('session'):
             snapshot['session'] = previous_state['session']
@@ -622,7 +657,7 @@ async def update_live_cache():
             # Always include last_update timestamp
             diff_payload['last_update'] = snapshot_copy.get('last_update')
             # Always include critical keys if they exist
-            for key in ['timing', 'lap_count', 'weather', 'track_status', 'timing_app_data', 'positions', 'car_data']:
+            for key in ['timing', 'lap_count', 'weather', 'track_status', 'timing_app_data', 'positions', 'car_data', 'session_status']:
                 if key in snapshot_copy:
                     diff_payload[key] = snapshot_copy[key]
         

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useReducer, useRef, useCallback } from "react"
+import { useState, useEffect, useReducer, useRef } from "react"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -171,7 +171,6 @@ type LiveDataState = {
   tyreData: { [key: string]: TimingAppLine }
   raceControl: RaceControlMessage[]
   sessionInfo: SessionInfo | null
-  sessionStatus: string | null  // "Started", "Finished", "Finalised", "Ends"
   trackStatus: TrackStatus | null
   weather: WeatherData | null
   positions: PositionData | null
@@ -539,15 +538,6 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
         updates.timingStats = mergedStats as TimingStats
       }
 
-      // CRITICAL: Process session_status to determine if session is live
-      const sessionStatusData = toRecord(data.session_status)
-      if (sessionStatusData) {
-        const statusValue = sessionStatusData.Status as string
-        if (statusValue) {
-          updates.sessionStatus = statusValue
-        }
-      }
-
       if (Array.isArray(data.race_control)) {
         updates.raceControl = data.race_control.slice(-20)
       }
@@ -619,7 +609,6 @@ const initialState: LiveDataState = {
   tyreData: {},
   raceControl: [],
   sessionInfo: null,
-  sessionStatus: null,
   trackStatus: null,
   weather: null,
   positions: null,
@@ -648,16 +637,45 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
     )
   }
 
-  // SSE callback — fires for EVERY update, bypassing React batching issues
-  // This is the f1-dash pattern: direct callback instead of useEffect on state
-  const onSSEUpdate = useCallback((updateData: Record<string, unknown>) => {
-    if (!updateData) return
-    dispatch({ type: 'SET_LOADING', payload: false })
-    dispatch({ type: 'UPDATE_FROM_WEBSOCKET', payload: updateData })
-  }, [])
+  // SSE connection for real-time updates (f1-dash style - simpler!)
+  const { data: sseData, connected: sseConnected, error: sseError } = useSSELiveData()
 
-  // SSE connection for real-time updates
-  const { connected: sseConnected, error: sseError } = useSSELiveData(onSSEUpdate)
+  // CRITICAL FIX: Track previous data to force updates even when object reference is same
+  const prevSseDataRef = useRef<string | null>(null)
+  
+  // Handle SSE data updates - prioritize fast UI update
+  useEffect(() => {
+    if (!sseData) {
+      return
+    }
+    
+    // CRITICAL: Use last_update timestamp to detect changes, not object reference
+    // This ensures we process updates even when React thinks the object is the same
+    const currentUpdateKey = String(sseData.last_update || sseData._updateTimestamp || JSON.stringify(sseData))
+    
+    // Skip if this exact update was already processed
+    if (prevSseDataRef.current === currentUpdateKey) {
+      return
+    }
+    
+    prevSseDataRef.current = currentUpdateKey
+    
+    // CRITICAL: Always process updates, even if they appear unchanged
+    // This ensures frontend gets updates when nested values change
+    if (state.loading) {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+    // Process data update - always dispatch to ensure React detects changes
+    dispatch({ type: 'UPDATE_FROM_WEBSOCKET', payload: sseData })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sseData]) // CRITICAL: Only depend on sseData, not state values
+
+  // Handle SSE connection status
+  useEffect(() => {
+    if (sseConnected) {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [sseConnected])
 
   // Handle SSE errors
   useEffect(() => {
@@ -685,7 +703,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
   // Countdown timer effect
   useEffect(() => {
     const timer = setInterval(() => {
-      const isLive = state.sessionStatus === "Started" || (state.timingLines.length > 0 && state.sessionStatus !== "Finished" && state.sessionStatus !== "Finalised" && state.sessionStatus !== "Ends" && state.sessionStatus !== null)
+      const isLive = state.sessionInfo?.status === "live"
       
       if (state.sessionInfo?.EndDate && isLive) {
         // Countdown for live session
@@ -760,8 +778,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
     return <LiveTimingSkeleton />
   }
 
-  // F1 SessionStatus.Status: "Started" = live, "Finished"/"Finalised"/"Ends" = ended
-  const isLive = state.sessionStatus === "Started" || (state.timingLines.length > 0 && state.sessionStatus !== "Finished" && state.sessionStatus !== "Finalised" && state.sessionStatus !== "Ends" && state.sessionStatus !== null)
+  const isLive = state.sessionInfo?.status === "live"
 
   const DEFAULT_FLAG_CODE = "un"
 
@@ -969,21 +986,21 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
         <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-3 flex flex-col" style={{ height: 'calc(100vh - 178px)' }}>
           <CardContent className="p-0 flex flex-col flex-1 min-h-0">
             {/* Header Row */}
-            <div
-              className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 items-center text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0"
-              style={{ display: 'grid', gridTemplateColumns: '36px 48px 56px 64px 52px 44px 68px 1fr 1fr 1fr 80px', gap: '4px', minWidth: 0 }}
-            >
-              <div className="text-center">POS</div>
-              <div>DRV</div>
-              <div>GAP</div>
-              <div className="text-center">TYRE</div>
-              <div className="text-center">STATUS</div>
-              <div className="text-center">DRS</div>
-              <div>LAP TIME</div>
-              <div className="text-center">S1</div>
-              <div className="text-center">S2</div>
-              <div className="text-center">S3</div>
-              <div className="text-center">SPEED</div>
+            <div className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 flex items-center gap-2 text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0">
+              <div className="w-10 text-center">POS</div>
+              <div className="w-12">DRV</div>
+              <div className="w-16">GAP</div>
+              <div className="w-20 text-center">TYRE</div>
+              <div className="w-16 text-center">STATUS</div>
+              <div className="w-12 text-center">DRS</div>
+              <div className="w-20">LAP TIME</div>
+              <div className="flex gap-2">
+                <div className="w-28 text-center">S1</div>
+                <div className="w-28 text-center">S2</div>
+                <div className="w-28 text-center">S3</div>
+              </div>
+              <div className="w-40 text-center">SPEED</div>
+              {/* We'll add more columns here step by step */}
             </div>
 
             <div className="flex-1 overflow-y-auto timing-scroll">
@@ -1024,102 +1041,119 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                 return (
                   <div
                     key={line.RacingNumber}
-                    className="border-b border-neutral-800 hover:bg-neutral-800/50 transition-colors px-3 py-1.5"
+                    className="border-b border-neutral-800 hover:bg-neutral-800/50 transition-colors px-3 py-2"
                     style={{ borderLeft: `4px solid #${teamColor}` }}
                   >
-                    {/* Single Row Layout - CSS Grid aligned with header */}
-                    <div
-                      className="items-center"
-                      style={{ display: 'grid', gridTemplateColumns: '36px 48px 56px 64px 52px 44px 68px 1fr 1fr 1fr 80px', gap: '4px', minWidth: 0 }}
-                    >
+                    {/* Single Row Layout - Compact */}
+                    <div className="flex items-center gap-2">
                       {/* Position */}
-                      <div className="text-2xl font-bold text-white text-center">
+                      <div className="text-3xl font-bold text-white w-10 text-center flex-shrink-0">
                         {line.Position}
                       </div>
 
                       {/* Driver Badge */}
                       <div
-                        className="px-1 py-0.5 rounded font-bold text-xs text-center truncate"
+                        className="px-2 py-1 rounded font-bold text-sm flex-shrink-0 w-12 text-center"
                         style={{ backgroundColor: `#${teamColor}`, color: '#000' }}
                       >
                         {driver?.name_acronym || driver?.Tla || line.RacingNumber}
                       </div>
 
-                      {/* Gap/Interval */}
-                      <div className="flex flex-col items-start justify-center min-w-0 overflow-hidden">
+                      {/* Gap/Interval - Left Aligned */}
+                      <div className="flex flex-col items-start justify-center w-16 flex-shrink-0">
                         {idx === 0 ? (
-                          <div className="text-[10px] font-mono text-white font-bold">LEAD</div>
+                          <div className="text-xs font-mono text-white font-bold">LEAD</div>
                         ) : (
                           <>
-                            <div className="text-[11px] font-mono text-white font-bold leading-none truncate w-full">
+                            {/* Interval to car ahead */}
+                            <div className="text-sm font-mono text-white font-bold leading-none">
                               {(() => {
+                                // Try multiple possible locations for interval data
                                 const gapToLeader = line.GapToLeader
                                 const intervalValue = typeof gapToLeader === 'string' ? gapToLeader : gapToLeader?.Value
-                                return intervalValue ||
-                                  line.IntervalToPositionAhead?.Value ||
-                                  line.Stats?.[0]?.TimeDifftoPositionAhead ||
-                                  line.Stats?.[1]?.TimeDifftoPositionAhead ||
-                                  "---"
+                                const interval = intervalValue ||
+                                               line.IntervalToPositionAhead?.Value ||
+                                               line.Stats?.[0]?.TimeDifftoPositionAhead ||
+                                               line.Stats?.[1]?.TimeDifftoPositionAhead ||
+                                               "---"
+                                return interval
                               })()}
                             </div>
-                            <div className="text-[9px] font-mono text-neutral-500 leading-none mt-0.5 truncate w-full">
+                            {/* Gap to leader */}
+                            <div className="text-[10px] font-mono text-neutral-500 leading-none mt-0.5">
                               {(() => {
                                 const gapToLeader = line.GapToLeader
                                 const gapValue = typeof gapToLeader === 'object' ? gapToLeader?.Value : null
-                                return gapValue ||
-                                  line.Stats?.[0]?.TimeDiffToFastest ||
-                                  line.Stats?.[1]?.TimeDiffToFastest ||
-                                  "---"
+                                const gap = gapValue ||
+                                           line.Stats?.[0]?.TimeDiffToFastest ||
+                                           line.Stats?.[1]?.TimeDiffToFastest ||
+                                           "---"
+                                return gap
                               })()}
                             </div>
                           </>
                         )}
                       </div>
 
-                      {/* Tire Section */}
-                      <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                      {/* Tire Section - Compact */}
+                      <div className="flex items-center gap-1 w-20 flex-shrink-0">
                         {currentTyre ? (
                           <>
-                            <div className="flex-shrink-0">
+                            {/* Circular tire icon */}
+                            <div className="relative flex-shrink-0">
                               <Image
                                 src={getTyreImage(currentTyre.compound)}
                                 alt={currentTyre.compound}
-                                width={20}
-                                height={20}
+                                width={24}
+                                height={24}
                                 className="opacity-90"
                               />
                             </div>
+                            
+                            {/* Pit stops and laps count */}
                             <div className="flex flex-col items-start leading-none">
-                              <div className="text-[9px] text-white font-bold">{pitStopCount}P</div>
-                              <div className="text-[9px] text-neutral-400 font-bold mt-0.5">{currentTyre.laps}L</div>
+                              <div className="text-[10px] text-white font-bold">
+                                {pitStopCount}PIT
+                              </div>
+                              <div className="text-[10px] text-white font-bold mt-0.5">
+                                {currentTyre.laps}LAP
+                              </div>
                             </div>
                           </>
                         ) : (
-                          <div className="text-[10px] text-neutral-600">---</div>
+                          <div className="text-xs text-neutral-600">---</div>
                         )}
                       </div>
 
-                      {/* STATUS Indicator */}
-                      <div className="flex items-center justify-center min-w-0">
+                      {/* STATUS Indicator (PIT/OUT/KO) */}
+                      <div className="w-16 flex items-center justify-center flex-shrink-0">
                         {(() => {
                           if (line.InPit) {
                             return (
-                              <div className="px-1.5 py-0.5 rounded border border-cyan-500 font-bold text-[9px] text-cyan-500 bg-cyan-500/10">PIT</div>
+                              <div className="px-2 py-1.5 rounded border border-cyan-500 font-bold text-[10px] text-cyan-500 bg-cyan-500/10">
+                                PIT
+                              </div>
                             )
                           }
                           if (line.PitOut) {
                             return (
-                              <div className="px-1.5 py-0.5 rounded border border-red-500 font-bold text-[9px] text-red-500 bg-red-500/10">OUT</div>
+                              <div className="px-2 py-1.5 rounded border border-red-500 font-bold text-[10px] text-red-500 bg-red-500/10">
+                                OUT
+                              </div>
                             )
                           }
                           if (line.KnockedOut || line.Stopped || line.Retired) {
                             return (
-                              <div className="px-1.5 py-0.5 rounded border border-neutral-600 font-bold text-[9px] text-neutral-600 bg-neutral-600/10">KO</div>
+                              <div className="px-2 py-1.5 rounded border border-neutral-600 font-bold text-[10px] text-neutral-600 bg-neutral-600/10">
+                                KO
+                              </div>
                             )
                           }
                           if (statusText) {
                             return (
-                              <div className="px-1 py-0.5 rounded border border-neutral-700 font-bold text-[8px] text-neutral-400 bg-neutral-800/50 truncate">{statusText.toUpperCase()}</div>
+                              <div className="px-2 py-1.5 rounded border border-neutral-700 font-bold text-[10px] text-neutral-400 bg-neutral-800/50">
+                                {statusText.toUpperCase()}
+                              </div>
                             )
                           }
                           return null
@@ -1127,18 +1161,18 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                       </div>
 
                       {/* DRS Indicator */}
-                      <div className="flex items-center justify-center min-w-0">
+                      <div className="w-12 flex items-center justify-center flex-shrink-0">
                         {(() => {
                           const isDrsAvailable = drsStatus >= 1
                           const drsIsOpen = drsStatus === 2
-                          const drsLabel = drsIsOpen ? 'OPEN' : isDrsAvailable ? 'RDY' : 'DRS'
+                          const drsLabel = drsIsOpen ? 'OPEN' : isDrsAvailable ? 'READY' : 'DRS'
                           return (
-                            <div
-                              className={`px-1.5 py-0.5 rounded border font-bold text-[9px] ${
+                            <div 
+                              className={`px-2 py-1.5 rounded border font-bold text-[10px] ${
                                 drsIsOpen
                                   ? 'border-purple-500 text-purple-400 bg-purple-500/10'
-                                  : isDrsAvailable
-                                    ? 'border-green-500 text-green-500 bg-green-500/10'
+                                  : isDrsAvailable 
+                                    ? 'border-green-500 text-green-500 bg-green-500/10' 
                                     : 'border-neutral-700 text-neutral-700 bg-neutral-700/10'
                               }`}
                             >
@@ -1148,59 +1182,72 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                         })()}
                       </div>
 
-                      {/* Lap Time */}
-                      <div className="flex flex-col items-start justify-center min-w-0 overflow-hidden">
-                        <div className="text-[11px] font-mono text-white font-bold leading-none truncate w-full">{bestLapTime}</div>
-                        <div className="text-[9px] font-mono text-neutral-500 leading-none mt-0.5 truncate w-full">{lastLapTime}</div>
+                      {/* Lap Time - Best on top, Last on bottom */}
+                      <div className="flex flex-col items-start justify-center w-20 flex-shrink-0">
+                        {/* Best Lap Time */}
+                        <div className="text-sm font-mono text-white font-bold leading-none">
+                          {bestLapTime}
+                        </div>
+                        {/* Last Lap Time */}
+                        <div className="text-[10px] font-mono text-neutral-500 leading-none mt-0.5">
+                          {lastLapTime}
+                        </div>
                       </div>
 
-                      {/* Sector Times - S1, S2, S3 */}
-                      {[0, 1, 2].map((sectorIdx) => {
-                        const sector = line.Sectors?.[sectorIdx]
-                        const sectorRecord = isPlainObject(sector) ? sector : undefined
-                        const bestSectorValue = bestSectors?.[sectorIdx]?.Value
-                          || extractValueString(sectorRecord?.BestLapTime)
-                          || extractValueString(sectorRecord?.BestTime)
-                          || extractValueString(sectorRecord?.PersonalBest)
-                        const currentSectorValue = extractValueString(sectorRecord?.Value) ?? "---"
+                      {/* Sector Times - S1, S2, S3 with track segment indicators */}
+                      <div className="flex gap-2">
+                        {[0, 1, 2].map((sectorIdx) => {
+                          const sector = line.Sectors?.[sectorIdx]
+                          const sectorRecord = isPlainObject(sector) ? sector : undefined
+                          const bestSectorValue = bestSectors?.[sectorIdx]?.Value
+                            || extractValueString(sectorRecord?.BestLapTime)
+                            || extractValueString(sectorRecord?.BestTime)
+                            || extractValueString(sectorRecord?.PersonalBest)
+                          const currentSectorValue = extractValueString(sectorRecord?.Value) ?? "---"
+                          
+                          return (
+                            <div key={sectorIdx} className="flex flex-col items-start w-28 flex-shrink-0">
+                              {/* Track segments indicator bar */}
+                              <div className="w-full h-2 flex gap-0.5 mb-2">
+                                {sectorRecord?.Segments && Array.isArray(sectorRecord.Segments) && sectorRecord.Segments.length > 0 ? (
+                                  sectorRecord.Segments.map((segment, segIdx) => {
+                                    const segStatus = typeof segment === 'number' ? segment : segment.Status
+                                    const segColor = getSectorColor(segStatus)
+                                    return (
+                                      <div
+                                        key={segIdx}
+                                        className="flex-1 h-full rounded-sm"
+                                        style={{ backgroundColor: segColor }}
+                                      />
+                                    )
+                                  })
+                                ) : (
+                                  <div className="w-full h-full rounded-full bg-neutral-700" />
+                                )}
+                              </div>
+                              
+                              {/* Best and Current times side by side */}
+                              <div className="flex items-baseline gap-2">
+                                {/* Best sector time (larger) */}
+                                <div 
+                                  className="text-base font-mono font-bold leading-none"
+                                  style={{ color: getSectorColor(sector?.Status || 0) }}
+                                >
+                                  {bestSectorValue || "---"}
+                                </div>
+                                <div className="text-[10px] font-mono text-neutral-500 leading-none">
+                                  {currentSectorValue}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </>
 
-                        return (
-                          <div key={sectorIdx} className="flex flex-col min-w-0 overflow-hidden">
-                            {/* Track segments indicator bar */}
-                            <div className="w-full h-1.5 flex gap-px mb-1">
-                              {sectorRecord?.Segments && Array.isArray(sectorRecord.Segments) && sectorRecord.Segments.length > 0 ? (
-                                sectorRecord.Segments.map((segment, segIdx) => {
-                                  const segStatus = typeof segment === 'number' ? segment : segment.Status
-                                  const segColor = getSectorColor(segStatus)
-                                  return (
-                                    <div
-                                      key={segIdx}
-                                      className="flex-1 h-full rounded-sm"
-                                      style={{ backgroundColor: segColor }}
-                                    />
-                                  )
-                                })
-                              ) : (
-                                <div className="w-full h-full rounded-full bg-neutral-700" />
-                              )}
-                            </div>
-                            {/* Best sector time */}
-                            <div
-                              className="text-[11px] font-mono font-bold leading-none truncate"
-                              style={{ color: getSectorColor(sector?.Status || 0) }}
-                            >
-                              {bestSectorValue || "---"}
-                            </div>
-                            <div className="text-[9px] font-mono text-neutral-500 leading-none mt-0.5 truncate">
-                              {currentSectorValue}
-                            </div>
-                          </div>
-                        )
-                      })}
-
-                      {/* Speed - I1, I2, FL */}
-                      <div className="flex flex-col justify-center min-w-0 overflow-hidden gap-px">
+                      {/* Speed - I1, I2, FL with horizontal visualization bars */}
+                      <div className="flex flex-col justify-center truncate items-center xl:items-start text-[9px] lg:text-[10px]">
                         {(() => {
+                          // Get all speeds and find max for scaling
                           const speeds = [
                             { label: 'I1', value: parseFloat(line.Speeds?.I1?.Value || '0') },
                             { label: 'I2', value: parseFloat(line.Speeds?.I2?.Value || '0') },
@@ -1218,27 +1265,36 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                             }
                           }
                           const maxSpeed = Math.max(...speeds.map(s => s.value), 1)
-
+                          
                           return speeds.map((speed, idx) => {
                             const percentage = maxSpeed > 0 ? (speed.value / maxSpeed) * 100 : 0
-                            let barColor = '#525252'
+                            // Color gradient: red (slow) -> yellow (medium) -> green (fast)
+                            let barColor = '#525252' // gray for no data
                             if (speed.value > 0) {
-                              if (percentage >= 90) barColor = '#22C55E'
-                              else if (percentage >= 70) barColor = '#FACC15'
-                              else if (percentage >= 50) barColor = '#FB923C'
-                              else barColor = '#EF4444'
+                              if (percentage >= 90) barColor = '#22C55E' // green - fastest
+                              else if (percentage >= 70) barColor = '#FACC15' // yellow - medium
+                              else if (percentage >= 50) barColor = '#FB923C' // orange - slower
+                              else barColor = '#EF4444' // red - slowest
                             }
-
+                            
                             return (
-                              <div key={idx} className="flex items-center gap-0.5 leading-none">
-                                <div className="text-[8px] text-neutral-500 w-3 font-bold">{speed.label}</div>
+                              <div key={idx} className="flex items-center gap-1 leading-none">
+                                {/* Speed label - smaller */}
+                                <div className="text-[9px] text-neutral-400 w-4 font-bold">{speed.label}</div>
+                                
+                                {/* Horizontal visualization bar - thinner */}
                                 <div className="flex-1 h-0.5 bg-neutral-800 rounded-full overflow-hidden">
-                                  <div
+                                  <div 
                                     className="h-full transition-all duration-300"
-                                    style={{ width: `${percentage}%`, backgroundColor: barColor }}
+                                    style={{ 
+                                      width: `${percentage}%`,
+                                      backgroundColor: barColor
+                                    }}
                                   />
                                 </div>
-                                <div className="text-[8px] font-mono text-white font-bold w-6 text-right">
+                                
+                                {/* Speed value */}
+                                <div className="text-[9px] font-mono text-white font-bold w-7 text-right">
                                   {speed.value > 0 ? speed.value.toFixed(0) : '---'}
                                 </div>
                               </div>
@@ -1246,6 +1302,8 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                           })
                         })()}
                       </div>
+
+                      {/* We'll add more data here step by step */}
                     </div>
                   </div>
                 )

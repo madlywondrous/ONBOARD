@@ -82,8 +82,8 @@
 
 @layer base {
   html {
-    /* Reduce base rem size by 20% so the UI isn't excessively large */
-    font-size: 80%; 
+    /* Default browser size for dynamic adaptability across all systems */
+    font-size: 100%;
   }
   * {
     border-color: hsl(var(--border));

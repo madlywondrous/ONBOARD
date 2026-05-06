@@ -1,116 +1,84 @@
 /**
  * SSE (Server-Sent Events) Hook for F1 Live Data
- * Based on f1-dash architecture - simpler and more reliable than WebSocket
+ * 
+ * Supports TWO backends:
+ * 1. ONBOARD Python backend (port 8000) — uses renamed keys (timing, drivers, etc.)
+ * 2. f1-dash Rust realtime (port 4000) — uses raw F1 topic names (TimingData, DriverList, etc.)
+ * 
+ * Tries f1-dash realtime first (faster, proven), falls back to ONBOARD backend.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
 
 type JsonRecord = Record<string, unknown>;
 
-const isPlainObject = (value: unknown): value is JsonRecord => {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+// f1-dash realtime sends raw F1 topic names; map them to ONBOARD's expected keys
+const F1_TOPIC_TO_ONBOARD_KEY: Record<string, string> = {
+  TimingData: "timing",
+  DriverList: "drivers",
+  SessionInfo: "session",
+  WeatherData: "weather",
+  LapCount: "lap_count",
+  TrackStatus: "track_status",
+  TimingAppData: "timing_app_data",
+  RaceControlMessages: "race_control_messages_raw",
+  TeamRadio: "team_radio_raw",
+  SessionStatus: "session_status",
+  TimingStats: "timing_stats",
+  SessionData: "session_data",
+  ExtrapolatedClock: "extrapolated_clock",
+  Heartbeat: "heartbeat",
+  TopThree: "top_three",
+  ChampionshipPrediction: "championship_prediction",
 };
 
-const mergeValue = (base: unknown, update: unknown): unknown => {
-  if (update === null) {
-    return undefined;
-  }
+/**
+ * Map f1-dash format data to ONBOARD's expected format
+ */
+function mapF1DashToOnboard(data: JsonRecord): JsonRecord {
+  const mapped: JsonRecord = {};
 
-  if (isPlainObject(base) && isPlainObject(update)) {
-    // ALWAYS create a new object to trigger React re-renders
-    const result: JsonRecord = { ...(base as JsonRecord) };
-    for (const [key, value] of Object.entries(update)) {
-      const merged = mergeValue(result[key], value);
-      if (merged === undefined) {
-        delete result[key];
-      } else {
-        result[key] = merged;
+  for (const [key, value] of Object.entries(data)) {
+    // Skip compressed data (handled separately if needed)
+    if (key === "CarDataZ" || key === "PositionZ") continue;
+
+    const mappedKey = F1_TOPIC_TO_ONBOARD_KEY[key];
+    if (mappedKey) {
+      // Special handling for RaceControlMessages — extract .Messages array
+      if (key === "RaceControlMessages" && value && typeof value === "object") {
+        const rcm = value as JsonRecord;
+        mapped["race_control"] = Array.isArray(rcm.Messages) ? rcm.Messages : [];
       }
-    }
-    // Return a completely new object
-    return { ...result };
-  }
-
-  if (Array.isArray(base) && Array.isArray(update)) {
-    // Always return a new array
-    return [...update];
-  }
-
-  if (Array.isArray(base) && isPlainObject(update)) {
-    // Clone the base array
-    const result = [...base];
-
-    for (const [key, value] of Object.entries(update)) {
-      const index = Number(key);
-      if (Number.isNaN(index)) {
-        continue;
+      // Special handling for TeamRadio — extract .Captures array
+      else if (key === "TeamRadio" && value && typeof value === "object") {
+        const tr = value as JsonRecord;
+        mapped["team_radio"] = Array.isArray(tr.Captures) ? tr.Captures : [];
       }
-
-      const merged = mergeValue(result[index], value);
-      if (merged !== undefined) {
-        result[index] = merged as never;
+      // Special handling for SessionStatus — normalize to { Status: "..." }
+      else if (key === "SessionStatus" && value && typeof value === "object") {
+        mapped["session_status"] = value;
       }
-    }
-
-    return result;
-  }
-
-  if (isPlainObject(update)) {
-    const result: JsonRecord = {};
-    for (const [key, value] of Object.entries(update)) {
-      const merged = mergeValue(undefined, value);
-      if (merged !== undefined) {
-        result[key] = merged;
+      else {
+        mapped[mappedKey] = value;
       }
-    }
-    return result;
-  }
-
-  if (Array.isArray(update)) {
-    return [...update];
-  }
-
-  return update;
-};
-
-const mergeLiveData = (previous: LiveData | null, update: JsonRecord): LiveData => {
-  const next: LiveData = { ...(previous ?? {}) };
-
-  for (const [key, value] of Object.entries(update)) {
-    const merged = mergeValue(next[key as keyof LiveData], value);
-    const typedKey = key as keyof LiveData;
-    if (merged === undefined) {
-      next[typedKey] = undefined as LiveData[keyof LiveData];
     } else {
-      // Force new object/array references to trigger React re-renders
-      if (isPlainObject(merged)) {
-        next[typedKey] = { ...merged } as LiveData[keyof LiveData];
-      } else if (Array.isArray(merged)) {
-        next[typedKey] = [...merged] as LiveData[keyof LiveData];
-      } else {
-        next[typedKey] = merged as LiveData[keyof LiveData];
-      }
+      // Pass through unknown keys as-is
+      mapped[key] = value;
     }
   }
 
-  return next;
-};
+  // Always include a timestamp
+  if (!mapped.last_update) {
+    mapped.last_update = new Date().toISOString();
+  }
 
-const DEFAULT_SSE_PATH = "/api/sse";
-
-export interface LapCount extends JsonRecord {
-  CurrentLap?: number;
-  TotalLaps?: number;
-}
-
-export interface LiveTimingPayload extends JsonRecord {
-  Lines?: Record<string, JsonRecord>;
+  return mapped;
 }
 
 export interface LiveData extends Record<string, unknown> {
   session?: JsonRecord;
-  timing?: LiveTimingPayload;
-  lap_count?: LapCount;
+  timing?: JsonRecord;
+  lap_count?: JsonRecord;
   timing_app_data?: JsonRecord;
   positions?: JsonRecord;
   weather?: JsonRecord;
@@ -120,6 +88,7 @@ export interface LiveData extends Record<string, unknown> {
   team_radio?: unknown[];
   car_data?: JsonRecord;
   timing_stats?: JsonRecord;
+  session_status?: JsonRecord;
   last_update?: string;
 }
 
@@ -127,174 +96,148 @@ interface UseSSELiveDataResult {
   data: LiveData | null;
   connected: boolean;
   error: Error | null;
+  source: "f1-dash" | "onboard" | null;
 }
 
-export function useSSELiveData(): UseSSELiveDataResult {
+// Backend endpoints to try in order of preference
+const SSE_ENDPOINTS = [
+  { url: "http://localhost:4000/api/realtime", type: "f1-dash" as const },       // Local f1-dash Docker
+  { url: "https://rt-api.f1-dash.com/api/realtime", type: "f1-dash" as const }, // f1-dash public server
+  { url: "http://localhost:8000/api/sse", type: "onboard" as const },            // ONBOARD Python backend
+];
+
+export function useSSELiveData(
+  onUpdate?: (data: LiveData) => void
+): UseSSELiveDataResult {
   const [data, setData] = useState<LiveData | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [source, setSource] = useState<"f1-dash" | "onboard" | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastEventAtRef = useRef<number>(Date.now());
-  const consecutiveErrorCountRef = useRef(0);
-  const hasSuccessfulEventRef = useRef(false);
+  const onUpdateRef = useRef(onUpdate);
+  const endpointIndexRef = useRef(0);
 
-  const recordActivity = useCallback(() => {
-    lastEventAtRef.current = Date.now();
-    consecutiveErrorCountRef.current = 0;
-  }, []);
+  onUpdateRef.current = onUpdate;
 
-  const resolveSseUrl = useCallback(() => {
-    // Direct connection to backend - Next.js proxy doesn't handle SSE streaming well
-    if (typeof window !== "undefined") {
-      return `http://localhost:8000${DEFAULT_SSE_PATH}`;
-    }
-    return DEFAULT_SSE_PATH;
-  }, []);
-
-  const scheduleReconnect = useCallback((reconnectFn: () => void) => {
-    if (reconnectTimerRef.current) {
-      return;
-    }
-
+  const scheduleReconnect = useCallback((reconnectFn: () => void, delayMs = 3000) => {
+    if (reconnectTimerRef.current) return;
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
       reconnectFn();
-    }, 2500);
+    }, delayMs);
+  }, []);
+
+  const processData = useCallback((rawData: JsonRecord, backendType: "f1-dash" | "onboard"): LiveData => {
+    // f1-dash uses raw F1 topic names — map them to ONBOARD format
+    if (backendType === "f1-dash") {
+      return mapF1DashToOnboard(rawData) as LiveData;
+    }
+    // ONBOARD backend already uses the right keys
+    return rawData as LiveData;
   }, []);
 
   const connect = useCallback(() => {
     try {
-      const url = resolveSseUrl();
-      const sse = new EventSource(url, { withCredentials: true });
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+
+      const endpoint = SSE_ENDPOINTS[endpointIndexRef.current];
+      if (!endpoint) {
+        endpointIndexRef.current = 0;
+        scheduleReconnect(connect, 5000);
+        return;
+      }
+
+      console.log(`[SSE] Connecting to ${endpoint.type} at ${endpoint.url}...`);
+      const sse = new EventSource(endpoint.url);
       eventSourceRef.current = sse;
-      consecutiveErrorCountRef.current = 0;
-      lastEventAtRef.current = Date.now();
+
+      // Timeout: if no open event within 5s, try next endpoint
+      const connectionTimeout = setTimeout(() => {
+        if (!connected && sse.readyState !== EventSource.OPEN) {
+          console.log(`[SSE] ${endpoint.type} connection timeout, trying next...`);
+          sse.close();
+          eventSourceRef.current = null;
+          endpointIndexRef.current = (endpointIndexRef.current + 1) % SSE_ENDPOINTS.length;
+          connect();
+        }
+      }, 5000);
 
       sse.onopen = () => {
-        recordActivity();
+        clearTimeout(connectionTimeout);
         setConnected(true);
+        setSource(endpoint.type);
         setError(null);
+        console.log(`[SSE] Connected to ${endpoint.type} ✓`);
         if (reconnectTimerRef.current) {
           clearTimeout(reconnectTimerRef.current);
           reconnectTimerRef.current = null;
         }
       };
 
-      sse.onerror = (err) => {
-        const readyState = sse.readyState;
-        
-        if (readyState === EventSource.CONNECTING) {
-          return;
-        }
-        consecutiveErrorCountRef.current += 1;
-        setConnected(false);
-
-        const timeSinceLastEvent = Date.now() - lastEventAtRef.current;
-        const reachedRetryLimit = consecutiveErrorCountRef.current >= 3;
-        const staleStream = timeSinceLastEvent > 15000;
-        const neverReceivedData = !hasSuccessfulEventRef.current;
-
-        if (readyState === EventSource.CLOSED && eventSourceRef.current === sse) {
+      sse.onerror = () => {
+        clearTimeout(connectionTimeout);
+        if (sse.readyState === EventSource.CLOSED) {
+          setConnected(false);
           eventSourceRef.current = null;
+          // Try the next endpoint
+          endpointIndexRef.current = (endpointIndexRef.current + 1) % SSE_ENDPOINTS.length;
           scheduleReconnect(connect);
-        }
-
-        if (neverReceivedData || reachedRetryLimit || staleStream) {
-          setError(new Error("SSE connection failed"));
         }
       };
 
       // Handle initial state
       sse.addEventListener("initial", (event) => {
         try {
-          const initialData = JSON.parse(event.data) as unknown;
-          if (isPlainObject(initialData)) {
-            hasSuccessfulEventRef.current = true;
-            recordActivity();
-            setData(initialData as LiveData);
-          }
+          const rawData = JSON.parse(event.data) as JsonRecord;
+          const processed = processData(rawData, endpoint.type);
+          setData(processed);
+          onUpdateRef.current?.(processed);
         } catch (err) {
           console.error("Failed to parse initial SSE data:", err);
         }
       });
 
-      // Handle updates
+      // Handle updates — fire callback IMMEDIATELY for every update
       sse.addEventListener("update", (event) => {
         try {
-          const updateData = JSON.parse(event.data) as unknown;
-          if (isPlainObject(updateData)) {
-            hasSuccessfulEventRef.current = true;
-            recordActivity();
-            
-            // CRITICAL: Always create a new data object with unique timestamp
-            // This ensures React detects changes even when data structure is identical
-            const updateTimestamp = Date.now();
-            
-            setData((prev) => {
-              // CRITICAL FIX: Always merge updates, even if they appear unchanged
-              // This ensures frontend gets updates when nested values change
-              const merged = mergeLiveData(prev, updateData);
-              
-              // Force new object reference with timestamp to guarantee React detects changes
-              // Always create a completely new object to ensure React re-renders
-              // CRITICAL: Include all critical keys to ensure they're always present
-              const newData: LiveData = { 
-                ...merged,
-                // CRITICAL: Always include timestamp to force React update
-                _updateTimestamp: updateTimestamp,
-                // CRITICAL: Always include last_update if present
-                ...(updateData.last_update ? { last_update: updateData.last_update as string } : {}),
-                // Ensure critical keys are always included if present in update
-                ...(updateData.timing ? { timing: updateData.timing as LiveTimingPayload } : {}),
-                ...(updateData.lap_count ? { lap_count: updateData.lap_count as LapCount } : {}),
-                ...(updateData.weather ? { weather: updateData.weather as JsonRecord } : {}),
-                ...(updateData.track_status ? { track_status: updateData.track_status as JsonRecord } : {}),
-                ...(updateData.timing_app_data ? { timing_app_data: updateData.timing_app_data as JsonRecord } : {}),
-                ...(updateData.positions ? { positions: updateData.positions as JsonRecord } : {}),
-                ...(updateData.car_data ? { car_data: updateData.car_data as JsonRecord } : {}),
-              };
-              
-              return newData;
-            });
-          }
+          const rawData = JSON.parse(event.data) as JsonRecord;
+          const processed = processData(rawData, endpoint.type);
+          onUpdateRef.current?.(processed);
+          setData((prev) => (prev ? { ...prev, ...processed } : processed));
         } catch (err) {
           console.error("Failed to parse SSE update:", err);
         }
       });
 
-      // Handle pings (keep-alive)
       sse.addEventListener("ping", () => {
-        recordActivity();
+        // keep-alive
       });
-
     } catch (err) {
       console.error("Failed to create EventSource:", err);
-      const errorInstance = err instanceof Error ? err : new Error(String(err));
-      setError(errorInstance);
+      setError(err instanceof Error ? err : new Error(String(err)));
+      endpointIndexRef.current = (endpointIndexRef.current + 1) % SSE_ENDPOINTS.length;
       scheduleReconnect(connect);
     }
-  }, [recordActivity, resolveSseUrl, scheduleReconnect]);
-
-  const disconnect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-      setConnected(false);
-    }
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processData, scheduleReconnect]);
 
   useEffect(() => {
     connect();
-
     return () => {
-      disconnect();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
     };
-  }, [connect, disconnect]);
+  }, [connect]);
 
-  return { data, connected, error };
+  return { data, connected, error, source };
 }

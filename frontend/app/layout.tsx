@@ -1,5 +1,5 @@
 import type React from "react"
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import localFont from "next/font/local"
 import { Tomorrow } from "next/font/google"
 import "./globals.css"
@@ -33,6 +33,14 @@ export const metadata: Metadata = {
     shortcut: "/Onboard.svg",
     apple: "/Onboard.svg",
   }
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  themeColor: "#000000",
 }
 
 export default function RootLayout({
