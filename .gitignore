@@ -33,6 +33,7 @@ cache/
 .pytest_cache/
 .coverage
 htmlcov/
+backend/onboard/
 
 # Logs
 npm-debug.log*
