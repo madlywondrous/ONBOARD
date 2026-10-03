@@ -1,43 +1,31 @@
-# ONBOARD - Formula 1 Live Dashboard
+<div align="center">
+  <img src="frontend/public/image Resource/UI/Onboard.svg" width="150" alt="ONBOARD Logo"/>
+  <h1>ONBOARD - Formula 1 Live Dashboard</h1>
+  <p>A modern, real-time Formula 1 dashboard featuring a live race schedule, driver standings, and instantaneous telemetry timing.</p>
+</div>
 
-A modern, real-time Formula 1 dashboard with live timing, driver standings, and race calendar. Built with Next.js 15, TypeScript, and Server-Sent Events (SSE) for real-time updates.
+---
 
-## Quick Start
+## Overview
 
-### Prerequisites
-- Node.js 18+ and pnpm
-- Python 3.11+ with pip
+**ONBOARD** is a sleek, ultra-modern F1 telemetry and scheduling dashboard. Designed with an industry-grade glassmorphic UI, it hooks directly into official Formula 1 live data streams to deliver real-time race timing without needing to refresh the page.
 
-### 1. Install Backend Dependencies
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+### Features
 
-### 2. Start the Backend
-```bash
-cd backend
-python main.py
-# Server runs on http://localhost:8000
-```
+- **Live Telemetry:** Streams live lap times, sectors, and track status instantly using Server-Sent Events (SSE).
+- **Dynamic Calendar:** Automatically fetches the 2026 Racing Calendar using the OpenF1 API, complete with track maps and session timings automatically converted to your local timezone.
+- **Unified Design Language:** Built with a dark-mode frosted-glass aesthetic and high-performance components.
+- **Polyglot Monorepo:** Structured as an industry-standard monorepo with a Next.js (TypeScript) frontend communicating with a FastAPI (Python) backend.
 
-### 3. Install Frontend Dependencies
-```bash
-# In a new terminal
-cd frontend
-pnpm install
-```
+## Previews
 
-### 4. Start the Frontend
-```bash
-cd frontend
-pnpm dev
-# App runs on http://localhost:3000
-```
+### Live Race Dashboard
+Watch the telemetry roll in live. The dashboard displays lap counts, individual sector times, and real-time tire strategies.
 
-## Architecture
-- Frontend: Next.js 15.5.2 (App Router), Tailwind CSS, shadcn/ui
-- Backend: FastAPI, Python 3.11+, SSE Broadcaster
-- Data Source: F1 Official Live Timing API (SignalR)
+![Live Dashboard](docs/assets/live-dashboard.png)
+
+### Race Schedule & Calendar
+Keep track of upcoming sessions with a beautiful, automatically updating schedule featuring full-color track maps and countdown timers.
+
+![Race Schedule](docs/assets/schedule.png)
+
