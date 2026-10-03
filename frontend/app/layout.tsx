@@ -1,7 +1,7 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
 import localFont from "next/font/local"
-import { Tomorrow } from "next/font/google"
+import { Tomorrow, Russo_One } from "next/font/google"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 
@@ -22,6 +22,13 @@ const tomorrow = Tomorrow({
   style: ["normal", "italic"],
   subsets: ["latin"],
   variable: "--font-tomorrow",
+  display: "swap",
+})
+
+const formula1 = Russo_One({
+  weight: ["400"],
+  subsets: ["latin"],
+  variable: "--font-formula1",
   display: "swap",
 })
 
@@ -54,7 +61,7 @@ export default function RootLayout({
         <link rel="icon" href="/Onboard.svg" type="image/svg+xml" />
         <link rel="shortcut icon" href="/Onboard.svg" />
       </head>
-      <body className={`${tomorrow.variable} ${geistMono.variable} bg-black text-white antialiased`}>
+      <body className={`${tomorrow.variable} ${geistMono.variable} ${formula1.variable} bg-black text-white antialiased`}>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-red-500 text-white px-4 py-2 rounded z-50">Skip to main content</a>
         <Providers>
           {children}

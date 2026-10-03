@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import pako from "pako";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -47,9 +48,8 @@ function decodeCompressedPayload(payload: unknown): JsonRecord | null {
     for (let i = 0; i < decoded.length; i++) {
       binary[i] = decoded.charCodeAt(i);
     }
-    // Try zlib decompression (may need pako or similar for full zlib)
-    // For now, return null to indicate not decoded
-    return null;
+    const inflated = pako.inflate(binary, { to: 'string' });
+    return JSON.parse(inflated);
   } catch {
     return null;
   }

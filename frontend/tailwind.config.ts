@@ -72,6 +72,7 @@ const config: Config = {
   		fontFamily: {
   			'tomorrow': ['var(--font-tomorrow)', 'sans-serif'],
   			'mono': ['var(--font-geist-mono)', 'monospace'],
+  			'formula1': ['var(--font-formula1)', 'sans-serif'],
   		},
   		keyframes: {
   			'accordion-down': {

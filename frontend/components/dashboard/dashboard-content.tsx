@@ -4,11 +4,19 @@ import dynamic from "next/dynamic"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 // Dynamic imports with loading components
+const HomeSection = dynamic(() => import("@/components/dashboard/home-section").then(mod => ({ default: mod.HomeSection })), { 
+  ssr: false,
+  loading: () => <SectionSkeleton />
+})
 const LiveSection = dynamic(() => import("@/components/dashboard/live-section").then(mod => ({ default: mod.LiveSection })), { 
   ssr: false,
   loading: () => <SectionSkeleton />
 })
 const CalendarSection = dynamic(() => import("@/components/dashboard/calendar-section").then(mod => ({ default: mod.CalendarSection })), { 
+  ssr: false,
+  loading: () => <SectionSkeleton />
+})
+const StandingsSection = dynamic(() => import("@/components/dashboard/standings-section").then(mod => ({ default: mod.StandingsSection })), { 
   ssr: false,
   loading: () => <SectionSkeleton />
 })
@@ -28,8 +36,10 @@ function SectionSkeleton() {
 }
 
 // Error fallback components
+const HomeErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Home" />
 const LiveErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Live" />
 const CalendarErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Calendar" />
+const StandingsErrorFallback = ({ error }: { error: Error }) => <SectionErrorFallback error={error} section="Standings" />
 
 // Error fallback component
 function SectionErrorFallback({ error, section }: { error: Error; section: string }) {
@@ -57,6 +67,14 @@ interface DashboardContentProps {
 export const DashboardContent = memo(function DashboardContent({ activeSection }: DashboardContentProps) {
   const renderSection = () => {
     switch (activeSection) {
+      case "home":
+        return (
+          <ErrorBoundary fallback={HomeErrorFallback}>
+            <Suspense fallback={<SectionSkeleton />}>
+              <HomeSection />
+            </Suspense>
+          </ErrorBoundary>
+        )
       case "live":
         return (
           <ErrorBoundary fallback={LiveErrorFallback}>
@@ -70,6 +88,14 @@ export const DashboardContent = memo(function DashboardContent({ activeSection }
           <ErrorBoundary fallback={CalendarErrorFallback}>
             <Suspense fallback={<SectionSkeleton />}>
               <CalendarSection />
+            </Suspense>
+          </ErrorBoundary>
+        )
+      case "standings":
+        return (
+          <ErrorBoundary fallback={StandingsErrorFallback}>
+            <Suspense fallback={<SectionSkeleton />}>
+              <StandingsSection />
             </Suspense>
           </ErrorBoundary>
         )

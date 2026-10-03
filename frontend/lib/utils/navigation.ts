@@ -1,4 +1,4 @@
-import { Calendar, Trophy, Radio } from "lucide-react"
+import { Calendar, Trophy, Radio, Home } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 export interface NavigationItem {
@@ -9,8 +9,10 @@ export interface NavigationItem {
 }
 
 export const navigationItems: NavigationItem[] = [
+  { id: "home", icon: Home, label: "HOME" },
   { id: "live", icon: Radio, label: "LIVE" },
   { id: "calendar", icon: Calendar, label: "SCHEDULE" },
+  { id: "standings", icon: Trophy, label: "STANDINGS" },
 ]
 
-export type DashboardSection = "live" | "calendar"
+export type DashboardSection = "home" | "live" | "calendar" | "standings"

@@ -77,9 +77,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const savedSection = localStorage.getItem('dashboard-active-section') as DashboardSection
       const savedPreferences = localStorage.getItem('dashboard-preferences')
       
-      const defaultSection = savedSection && ['live', 'calendar', 'standings'].includes(savedSection) 
+      const defaultSection = savedSection && ['home', 'live', 'calendar', 'standings'].includes(savedSection) 
         ? savedSection 
-        : 'calendar'
+        : 'home'
 
       const preferences = savedPreferences 
         ? { ...initialState.preferences, ...JSON.parse(savedPreferences) }
@@ -102,7 +102,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       dispatch({
         type: 'INITIALIZE_STATE',
         payload: {
-          activeSection: 'calendar',
+          activeSection: 'home',
           sidebarCollapsed: window.innerWidth < 768,
           sidebarOpenedBy: window.innerWidth < 768 ? null : 'button',
           isHydrated: true

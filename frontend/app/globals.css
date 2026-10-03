@@ -97,3 +97,18 @@
     font-family: var(--font-tomorrow), sans-serif;
   }
 }
+
+@layer utilities {
+  .timing-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .timing-scroll::-webkit-scrollbar-track {
+    background: #171717; /* bg-neutral-900 */
+  }
+  .timing-scroll::-webkit-scrollbar-thumb {
+    background: #404040; /* bg-neutral-700 */
+  }
+  .timing-scroll::-webkit-scrollbar-thumb:hover {
+    background: #525252; /* bg-neutral-600 */
+  }
+}
