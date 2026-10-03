@@ -939,13 +939,13 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
           <CardContent className="p-0 flex flex-col flex-1 min-h-0">
             {/* Header Row */}
             <div
-              className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 items-center text-[10px] text-neutral-400 uppercase tracking-wider font-semibold flex-shrink-0"
-              style={{ display: 'grid', gridTemplateColumns: '36px 48px 56px 64px 52px 44px 68px 1fr 1fr 1fr 80px', gap: '4px', minWidth: 0 }}
+              className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 items-center text-[11px] text-neutral-400 uppercase tracking-wider font-bold flex-shrink-0"
+              style={{ display: 'grid', gridTemplateColumns: 'minmax(32px, 0.4fr) minmax(56px, 0.9fr) minmax(56px, 0.8fr) minmax(52px, 0.6fr) minmax(44px, 0.6fr) minmax(36px, 0.4fr) minmax(116px, 1.8fr) minmax(108px, 2.7fr) minmax(108px, 2.7fr) minmax(108px, 2.7fr) minmax(64px, 1.2fr)', gap: '8px', minWidth: 0, borderLeft: '4px solid transparent' }}
             >
               <div className="text-center">POS</div>
-              <div>DRV</div>
+              <div className="text-center">DRV</div>
               <div>GAP</div>
-              <div className="text-center">TYRE</div>
+              <div>TYRE</div>
               <div className="text-center">STATUS</div>
               <div className="text-center">DRS</div>
               <div>LAP TIME</div>
@@ -999,7 +999,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                     {/* Single Row Layout - CSS Grid aligned with header */}
                     <div
                       className="items-center"
-                      style={{ display: 'grid', gridTemplateColumns: '36px 48px 56px 64px 52px 44px 68px 1fr 1fr 1fr 80px', gap: '4px', minWidth: 0 }}
+                      style={{ display: 'grid', gridTemplateColumns: 'minmax(32px, 0.4fr) minmax(56px, 0.9fr) minmax(56px, 0.8fr) minmax(52px, 0.6fr) minmax(44px, 0.6fr) minmax(36px, 0.4fr) minmax(116px, 1.8fr) minmax(108px, 2.7fr) minmax(108px, 2.7fr) minmax(108px, 2.7fr) minmax(64px, 1.2fr)', gap: '8px', minWidth: 0 }}
                     >
                       {/* Position */}
                       <div className="text-2xl font-bold text-white text-center">
@@ -1008,7 +1008,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
 
                       {/* Driver Badge */}
                       <div
-                        className="px-1 py-0.5 rounded font-bold text-xs text-center truncate"
+                        className="px-1 py-0.5 rounded font-bold text-sm text-center truncate"
                         style={{ backgroundColor: `#${teamColor}`, color: '#000' }}
                       >
                         {driver?.name_acronym || driver?.Tla || line.RacingNumber}
@@ -1017,10 +1017,10 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                       {/* Gap/Interval */}
                       <div className="flex flex-col items-start justify-center min-w-0 overflow-hidden">
                         {idx === 0 ? (
-                          <div className="text-[10px] font-mono text-white font-bold">LEAD</div>
+                          <div className="text-[11px] font-mono text-white font-bold">LEAD</div>
                         ) : (
                           <>
-                            <div className="text-[11px] font-mono text-white font-bold leading-none truncate w-full">
+                            <div className="text-xs font-mono text-white font-bold leading-none truncate w-full">
                               {(() => {
                                 const gapToLeader = line.GapToLeader
                                 const intervalValue = typeof gapToLeader === 'string' ? gapToLeader : gapToLeader?.Value
@@ -1031,7 +1031,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                                   "---"
                               })()}
                             </div>
-                            <div className="text-[9px] font-mono text-neutral-500 leading-none mt-0.5 truncate w-full">
+                            <div className="text-[10px] font-mono text-neutral-500 leading-none mt-0.5 truncate w-full">
                               {(() => {
                                 const gapToLeader = line.GapToLeader
                                 const gapValue = typeof gapToLeader === 'object' ? gapToLeader?.Value : null
@@ -1050,21 +1050,21 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                         {currentTyre ? (
                           <>
                             <div className="flex-shrink-0">
-                              <Image
-                                src={getTyreImage(currentTyre.compound)}
-                                alt={currentTyre.compound}
-                                width={20}
-                                height={20}
-                                className="opacity-90"
-                              />
+                                <Image
+                                  src={getTyreImage(currentTyre.compound)}
+                                  alt={currentTyre.compound}
+                                  width={26}
+                                  height={26}
+                                  className="opacity-90"
+                                />
                             </div>
                             <div className="flex flex-col items-start leading-none">
-                              <div className="text-[9px] text-white font-bold">{pitStopCount}P</div>
-                              <div className="text-[9px] text-neutral-400 font-bold mt-0.5">{currentTyre.laps}L</div>
+                              <div className="text-[10px] text-white font-bold">{pitStopCount}P</div>
+                              <div className="text-[10px] text-neutral-400 font-bold mt-0.5">{currentTyre.laps}L</div>
                             </div>
                           </>
                         ) : (
-                          <div className="text-[10px] text-neutral-600">---</div>
+                          <div className="text-[11px] text-neutral-600">---</div>
                         )}
                       </div>
 
@@ -1073,22 +1073,22 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                         {(() => {
                           if (line.InPit) {
                             return (
-                              <div className="px-1.5 py-0.5 rounded border border-cyan-500 font-bold text-[9px] text-cyan-500 bg-cyan-500/10">PIT</div>
+                              <div className="px-1.5 py-0.5 rounded border border-cyan-500 font-bold text-[10px] text-cyan-500 bg-cyan-500/10">PIT</div>
                             )
                           }
                           if (line.PitOut) {
                             return (
-                              <div className="px-1.5 py-0.5 rounded border border-red-500 font-bold text-[9px] text-red-500 bg-red-500/10">OUT</div>
+                              <div className="px-1.5 py-0.5 rounded border border-red-500 font-bold text-[10px] text-red-500 bg-red-500/10">OUT</div>
                             )
                           }
                           if (line.KnockedOut || line.Stopped || line.Retired) {
                             return (
-                              <div className="px-1.5 py-0.5 rounded border border-neutral-600 font-bold text-[9px] text-neutral-600 bg-neutral-600/10">KO</div>
+                              <div className="px-1.5 py-0.5 rounded border border-neutral-600 font-bold text-[10px] text-neutral-600 bg-neutral-600/10">KO</div>
                             )
                           }
                           if (statusText) {
                             return (
-                              <div className="px-1 py-0.5 rounded border border-neutral-700 font-bold text-[8px] text-neutral-400 bg-neutral-800/50 truncate">{statusText.toUpperCase()}</div>
+                              <div className="px-1 py-0.5 rounded border border-neutral-700 font-bold text-[9px] text-neutral-400 bg-neutral-800/50 truncate">{statusText.toUpperCase()}</div>
                             )
                           }
                           return null
@@ -1103,7 +1103,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                           const drsLabel = drsIsOpen ? 'OPEN' : isDrsAvailable ? 'RDY' : 'DRS'
                           return (
                             <div
-                              className={`px-1.5 py-0.5 rounded border font-bold text-[9px] ${
+                              className={`px-1.5 py-0.5 rounded border font-bold text-[10px] ${
                                 drsIsOpen
                                   ? 'border-purple-500 text-purple-400 bg-purple-500/10'
                                   : isDrsAvailable
@@ -1118,9 +1118,9 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                       </div>
 
                       {/* Lap Time */}
-                      <div className="flex flex-col items-start justify-center min-w-0 overflow-hidden">
-                        <div className="text-[11px] font-mono text-white font-bold leading-none truncate w-full">{bestLapTime}</div>
-                        <div className="text-[9px] font-mono text-neutral-500 leading-none mt-0.5 truncate w-full">{lastLapTime}</div>
+                      <div className="flex items-baseline gap-1.5 justify-start min-w-0 overflow-hidden w-full">
+                        <span className="text-xs font-mono text-white font-bold leading-none truncate">{bestLapTime}</span>
+                        <span className="text-[10px] font-mono text-neutral-500 leading-none truncate">{lastLapTime}</span>
                       </div>
 
                       {/* Sector Times - S1, S2, S3 */}
@@ -1153,15 +1153,17 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                                 <div className="w-full h-full rounded-full bg-neutral-700" />
                               )}
                             </div>
-                            {/* Best sector time */}
-                            <div
-                              className="text-[11px] font-mono font-bold leading-none truncate"
-                              style={{ color: getSectorColor(sector?.Status || 0) }}
-                            >
-                              {bestSectorValue || "---"}
-                            </div>
-                            <div className="text-[9px] font-mono text-neutral-500 leading-none mt-0.5 truncate">
-                              {currentSectorValue}
+                            {/* Sector times (Best and Current on one line) */}
+                            <div className="flex items-baseline justify-center gap-1.5 mt-0.5 min-w-0 overflow-hidden w-full">
+                              <span
+                                className="text-xs font-mono font-bold leading-none truncate"
+                                style={{ color: getSectorColor(sector?.Status || 0) }}
+                              >
+                                {bestSectorValue || "---"}
+                              </span>
+                              <span className="text-[9px] font-mono text-neutral-500 leading-none truncate">
+                                {currentSectorValue}
+                              </span>
                             </div>
                           </div>
                         )
@@ -1200,14 +1202,14 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
 
                             return (
                               <div key={idx} className="flex items-center gap-0.5 leading-none">
-                                <div className="text-[8px] text-neutral-500 w-3 font-bold">{speed.label}</div>
+                                <div className="text-[10px] text-neutral-500 w-4 font-bold">{speed.label}</div>
                                 <div className="flex-1 h-0.5 bg-neutral-800 rounded-full overflow-hidden">
                                   <div
                                     className="h-full transition-all duration-300"
                                     style={{ width: `${percentage}%`, backgroundColor: barColor }}
                                   />
                                 </div>
-                                <div className="text-[8px] font-mono text-white font-bold w-6 text-right">
+                                <div className="text-[10px] font-mono text-white font-bold w-6 text-right">
                                   {speed.value > 0 ? speed.value.toFixed(0) : '---'}
                                 </div>
                               </div>
