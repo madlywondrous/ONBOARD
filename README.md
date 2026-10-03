@@ -1,7 +1,3 @@
-<div align="center">
-  <h1>ONBOARD - Formula 1 Dashboard</h1>
-</div>
-
 ## Overview
 
 **ONBOARD** is a sleek, ultra-modern F1 telemetry and scheduling dashboard. Designed with an industry-grade glassmorphic UI, it hooks directly into official Formula 1 live data streams to deliver real-time race timing without needing to refresh the page.
