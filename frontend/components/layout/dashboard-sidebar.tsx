@@ -2,7 +2,6 @@
 
 import { useEffect, useCallback, memo } from "react"
 import { NavigationMenu } from "@/components/navigation/navigation-menu"
-import { SessionActivity } from "@/components/navigation/session-activity"
 import type { DashboardSection } from "@/lib/utils/navigation"
 
 interface DashboardSidebarProps {
@@ -99,7 +98,6 @@ export const DashboardSidebar = memo(function DashboardSidebar({
             activeSection={activeSection}
             onSectionChange={handleSectionChange}
           />
-          <SessionActivity />
         </div>
       </aside>
 

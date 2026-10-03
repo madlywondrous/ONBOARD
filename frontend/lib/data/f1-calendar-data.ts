@@ -1,5 +1,6 @@
 import { F1CalendarData, F1RaceData, Race, RaceStatus, Session } from '@/lib/types'
 import { validateRace } from '@/lib/validation'
+import { F1_CONFIG } from '@/lib/config'
 
 /**
  * Transform F1 calendar JSON data to Race interface format
@@ -104,7 +105,7 @@ export function createRaceUrl(raceName: string): string {
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
-  return `https://www.formula1.com/en/racing/2025/${cleanName}`
+  return `https://www.formula1.com/en/racing/${F1_CONFIG.currentSeason}/${cleanName}`
 }
 
 /**
@@ -118,20 +119,115 @@ export function createCircuitUrl(circuitName: string): string {
     .replace(/circuit|international|autodrome|autodromo/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-  return `https://www.formula1.com/en/racing/2025/circuits/${cleanName}`
+  return `https://www.formula1.com/en/racing/${F1_CONFIG.currentSeason}/circuits/${cleanName}`
 }
 
-/**
- * Load and transform F1 calendar data from JSON file
- */
 export async function loadF1CalendarData(): Promise<Race[]> {
   try {
-    // Import the JSON data
+    const year = F1_CONFIG.currentSeason
+    const [meetingsRes, sessionsRes] = await Promise.all([
+      fetch(`https://api.openf1.org/v1/meetings?year=${year}`),
+      fetch(`https://api.openf1.org/v1/sessions?year=${year}`)
+    ])
+
+    if (!meetingsRes.ok || !sessionsRes.ok) {
+      throw new Error('Failed to fetch from OpenF1 API')
+    }
+
+    const meetings = await meetingsRes.json()
+    const sessions = await sessionsRes.json()
+
+    interface OpenF1Meeting {
+      meeting_key: number
+      meeting_name: string
+      circuit_short_name: string
+      country_name: string
+      location: string
+      date_start: string
+      circuit_image?: string
+    }
+
+    interface OpenF1Session {
+      meeting_key: number
+      session_name: string
+      date_start: string
+    }
+
+    // Group sessions by meeting_key
+    const sessionsByMeeting = sessions.reduce((acc: Record<number, OpenF1Session[]>, session: OpenF1Session) => {
+      if (!acc[session.meeting_key]) {
+        acc[session.meeting_key] = []
+      }
+      acc[session.meeting_key].push(session)
+      return acc
+    }, {})
+
+    // Filter out testing and map to Race
+    const races: Race[] = meetings
+      .filter((meeting: OpenF1Meeting) => !meeting.meeting_name.toLowerCase().includes('testing'))
+      .map((meeting: OpenF1Meeting, index: number) => {
+        const meetingSessions = sessionsByMeeting[meeting.meeting_key] || []
+        const sessionMap: Record<string, string> = {}
+
+        meetingSessions.forEach((s: OpenF1Session) => {
+          if (s.session_name === 'Practice 1') sessionMap.practice1 = s.date_start
+          if (s.session_name === 'Practice 2') sessionMap.practice2 = s.date_start
+          if (s.session_name === 'Practice 3') sessionMap.practice3 = s.date_start
+          if (s.session_name === 'Qualifying') sessionMap.qualifying = s.date_start
+          if (s.session_name === 'Sprint') sessionMap.sprint = s.date_start
+          if (s.session_name === 'Sprint Shootout' || s.session_name === 'Sprint Qualifying') sessionMap.sprintQualifying = s.date_start
+          if (s.session_name === 'Race') sessionMap.race = s.date_start
+        })
+
+        // OpenF1 gives dates with timezone. Extract YYYY-MM-DD for the race date
+        // Fallback to meeting.date_start if sessionMap.race is somehow missing
+        const raceDateStart = sessionMap.race || meeting.date_start
+        const raceDate = raceDateStart.split('T')[0]
+        
+        const race: Race = {
+          id: generateRaceId(meeting.meeting_name, index + 1),
+          name: meeting.meeting_name,
+          circuit: meeting.circuit_short_name,
+          country: meeting.country_name,
+          city: meeting.location,
+          date: raceDate,
+          time: raceDateStart.split('T')[1].substring(0, 5),
+          round: index + 1,
+          status: 'upcoming',
+          url: createRaceUrl(meeting.meeting_name),
+          circuitUrl: createCircuitUrl(meeting.circuit_short_name),
+          circuitImage: meeting.circuit_image,
+          sessions: {
+            race: raceDateStart,
+            practice1: sessionMap.practice1,
+            practice2: sessionMap.practice2,
+            practice3: sessionMap.practice3,
+            qualifying: sessionMap.qualifying,
+          }
+        }
+
+        // Re-evaluate status based on complete dates
+        race.status = determineRaceStatusFromDates(race)
+        return race
+      })
+
+    return races
+  } catch (error) {
+    console.error('Error loading F1 calendar from OpenF1 API, falling back to JSON:', error)
     const jsonData = await import('./f1-2025-calendar.json')
     return transformRaceData(jsonData.default)
-  } catch {
-    throw new Error('Unable to load F1 calendar data')
   }
+}
+
+function determineRaceStatusFromDates(race: Race): RaceStatus {
+  const now = new Date()
+  const raceDateTime = new Date(race.sessions.race)
+  // Assume a race takes roughly 2 hours
+  const raceEndTime = new Date(raceDateTime.getTime() + 2 * 60 * 60 * 1000)
+  
+  if (now >= raceDateTime && now <= raceEndTime) return "live"
+  if (now > raceEndTime) return "completed"
+  return "upcoming"
 }
 
 /**

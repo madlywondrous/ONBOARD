@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useF1Calendar } from "@/hooks/use-f1-calendar"
+import { F1_CONFIG } from "@/lib/config"
 import type { Race, Session } from "@/lib/types"
 import { formatDate, formatTime, getStatusColor } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -100,6 +101,13 @@ export function F1Calendar({ races, className = "" }: F1CalendarProps) {
   return (
     <>
       <div className={`space-y-4 bg-black min-h-full ${className}`}>
+        {/* Page Title */}
+        <div className="pt-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-wider">
+            {F1_CONFIG.currentSeason} FIA FORMULA ONE WORLD CHAMPIONSHIP™
+          </h1>
+        </div>
+
         {/* Error Banner */}
         {error && (
           <div className="bg-orange-500/20 border border-orange-500/30 rounded p-3 text-orange-400 text-sm">
@@ -114,79 +122,76 @@ export function F1Calendar({ races, className = "" }: F1CalendarProps) {
           />
         )}
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-wider">2025 FIA FORMULA ONE WORLD CHAMPIONSHIP™</h1>
-            <p className="text-sm text-neutral-400">Race Schedule</p>
-          </div>
-          <div className="flex gap-2">
-            <Button className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-2 w-full sm:w-auto">
-              <Calendar className="w-4 h-4 mr-2" />
-              Export Calendar
-            </Button>
-          </div>
-        </div>
-
         {/* Season Overview */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="bg-neutral-900 border-neutral-700">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          <Card className="bg-neutral-900 border-neutral-700 overflow-hidden">
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-neutral-400 tracking-wider">TOTAL RACES</p>
-                  <p className="text-lg sm:text-xl font-bold text-white font-mono">{races.length}</p>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] sm:text-xs font-semibold text-neutral-500 tracking-widest uppercase">TOTAL RACES</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono tracking-tighter text-white">{races.length}</p>
                 </div>
-                <Flag className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <div className="p-2 bg-neutral-800/50 rounded-md">
+                  <Flag className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-900 border-neutral-700">
+          <Card className="bg-neutral-900 border-neutral-700 overflow-hidden">
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-neutral-400 tracking-wider">COMPLETED</p>
-                  <p className="text-lg sm:text-xl font-bold text-green-500 font-mono">{completedRaces}</p>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] sm:text-xs font-semibold text-neutral-500 tracking-widest uppercase">COMPLETED</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono tracking-tighter text-green-500">{completedRaces}</p>
                 </div>
-                <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
+                <div className="p-2 bg-green-500/10 rounded-md">
+                  <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-green-500/70" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-900 border-neutral-700">
+          <Card className="bg-neutral-900 border-neutral-700 overflow-hidden">
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-neutral-400 tracking-wider">UPCOMING</p>
-                  <p className="text-lg sm:text-xl font-bold text-red-500 font-mono">{upcomingRaces}</p>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] sm:text-xs font-semibold text-neutral-500 tracking-widest uppercase">UPCOMING</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono tracking-tighter text-red-500">{upcomingRaces}</p>
                 </div>
-                <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-red-500" />
+                <div className="p-2 bg-red-500/10 rounded-md">
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-red-500/70" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-900 border-neutral-700">
+          <Card className="bg-neutral-900 border-neutral-700 overflow-hidden">
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-neutral-400 tracking-wider">COUNTRIES</p>
-                  <p className="text-lg sm:text-xl font-bold text-white font-mono">{totalCountries}</p>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] sm:text-xs font-semibold text-neutral-500 tracking-widest uppercase">COUNTRIES</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono tracking-tighter text-white">{totalCountries}</p>
                 </div>
-                <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <div className="p-2 bg-neutral-800/50 rounded-md">
+                  <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Filters - Positioned after stats */}
-        <CalendarFilters
-          activeFilter={activeFilter}
-          activeSort={activeSort}
-          onFilterChange={setActiveFilter}
-          onSortChange={setActiveSort}
-          raceCounts={raceCounts}
-        />
+        {/* Schedule Header & Filters */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-6 mb-4">
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wider">Race Schedule</h2>
+          <CalendarFilters
+            activeFilter={activeFilter}
+            activeSort={activeSort}
+            onFilterChange={setActiveFilter}
+            onSortChange={setActiveSort}
+            raceCounts={raceCounts}
+          />
+        </div>
 
         {/* Race Calendar Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

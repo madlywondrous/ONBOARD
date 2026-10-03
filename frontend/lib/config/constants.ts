@@ -11,7 +11,7 @@ export const DASHBOARD_CONFIG = {
 
 // F1 Season configuration
 export const F1_CONFIG = {
-  currentSeason: 2025,
+  currentSeason: 2026,
   maxRounds: 24,
   sessionTypes: ['practice1', 'practice2', 'practice3', 'qualifying', 'race'] as const,
   raceStatuses: ['upcoming', 'live', 'completed'] as const,

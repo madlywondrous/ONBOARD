@@ -27,7 +27,7 @@ const tomorrow = Tomorrow({
 
 export const metadata: Metadata = {
   title: "ONBOARD",
-  description: "Formula 1 2025 Season Dashboard - Race Calendar & Live Timing",
+  description: "Formula 1 2026 Season Dashboard - Race Calendar & Live Timing",
   icons: {
     icon: "/Onboard.svg",
     shortcut: "/Onboard.svg",

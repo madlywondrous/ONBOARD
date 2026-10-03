@@ -1,9 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Radio, Timer } from "lucide-react"
 import { CountryFlag } from "@/components/ui/country-flag"
 import type { Session } from "@/lib/types"
@@ -56,105 +55,113 @@ export function RedesignedSessionCard({
   const isLive = currentSession.status === "live"
 
   return (
-    <Card className="bg-black bg-gradient-to-r from-red-500/20 to-orange-500/20 border-red-500/30">
-      <CardHeader className="pb-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {isLive ? (
-              <Radio className="w-4 h-4 sm:w-5 sm:h-5 text-red-500 animate-pulse" />
-            ) : (
-              <Timer className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
-            )}
-            <CardTitle className="text-base sm:text-lg font-bold text-white tracking-wider">
-              {isLive ? "LIVE NOW" : "NEXT SESSION"}
-            </CardTitle>
-            <Badge
-              className={
-                isLive
-                  ? "bg-red-500 text-white animate-pulse text-xs"
-                  : "bg-orange-500/20 text-orange-500 text-xs"
-              }
-            >
-              {currentSession.status.toUpperCase()}
-            </Badge>
-          </div>
-          <div className="text-left sm:text-right">
-            <div className="text-xs sm:text-sm text-neutral-400">
-              {isLive ? "TIME REMAINING" : "STARTS IN"}
+    <Card className="bg-neutral-900 border-neutral-700 overflow-hidden relative group">
+      {/* Background ambient glow if live */}
+      {isLive && (
+        <div className="absolute top-0 left-0 w-full h-full bg-red-500/5 pointer-events-none" />
+      )}
+      
+      {/* Circuit Image Background/Right Side */}
+      {currentSession.race.circuitImage && (
+        <div className="absolute right-4 top-4 bottom-4 w-[38%] opacity-90 pointer-events-none transition-opacity group-hover:opacity-100 brightness-110 hidden md:block z-0"
+             style={{
+               backgroundImage: `url(${currentSession.race.circuitImage})`,
+               backgroundSize: 'contain',
+               backgroundPosition: 'right center',
+               backgroundRepeat: 'no-repeat',
+             }}
+        />
+      )}
+
+      <CardContent className="p-0">
+        <div className="flex flex-col md:flex-row w-full relative z-10">
+          
+          {/* Left/Top Section: Status and Countdown */}
+          <div className={`p-4 md:p-6 md:w-[30%] flex flex-col justify-between border-b md:border-b-0 md:border-r border-neutral-800 ${isLive ? 'bg-red-500/10' : 'bg-neutral-950/50'}`}>
+            <div className="flex items-center gap-2 mb-8 md:mb-0">
+              {isLive ? (
+                <Radio className="w-5 h-5 text-red-500 animate-pulse" />
+              ) : (
+                <Timer className="w-5 h-5 text-neutral-400" />
+              )}
+              <h3 className="text-sm font-bold text-neutral-300 tracking-widest uppercase">
+                {isLive ? "Live Now" : "Next Session"}
+              </h3>
             </div>
-            <div className="text-lg sm:text-xl font-bold text-red-500 font-mono">{countdown}</div>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <CountryFlag
-                country={currentSession.race.country}
-                width={40}
-                height={27}
-                className="shadow-lg"
+            
+            <div className="space-y-1 mt-auto md:mt-12">
+              <div className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-1">
+                {isLive ? "Time Remaining" : "Starts In"}
+              </div>
+              <div className={`text-4xl lg:text-5xl font-bold font-mono tracking-tighter ${isLive ? 'text-red-500' : 'text-white'}`}>
+                {countdown}
+              </div>
+            </div>
+
+            {/* Mobile Circuit Image */}
+            {currentSession.race.circuitImage && (
+              <div className="mt-6 w-full h-32 opacity-80 brightness-110 md:hidden"
+                   style={{
+                     backgroundImage: `url(${currentSession.race.circuitImage})`,
+                     backgroundSize: 'contain',
+                     backgroundPosition: 'center',
+                     backgroundRepeat: 'no-repeat',
+                   }}
               />
+            )}
+          </div>
+
+          {/* Right/Bottom Section: Race Details */}
+          <div className="p-4 md:p-6 md:w-[70%] flex flex-col justify-center">
+            <div className="flex justify-between items-start mb-6 md:mr-[35%] lg:mr-[38%]">
+              <div className="flex gap-4 items-start">
+                <CountryFlag
+                  country={currentSession.race.country}
+                  width={84}
+                  height={56}
+                  className="shadow-lg rounded border border-neutral-800 mt-1 flex-shrink-0"
+                />
+                <div className="flex flex-col justify-center -mt-0.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-mono text-neutral-500">
+                      ROUND {currentSession.race.round}
+                    </span>
+                    <Badge variant="secondary" className={`${isLive ? "bg-red-500 text-white" : "bg-neutral-700 text-neutral-300"} px-1.5 py-0 uppercase text-[10px] tracking-wider rounded-sm`}>
+                      {currentSession.type}
+                    </Badge>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wide leading-none mb-1.5">
+                    {currentSession.race.name}
+                  </h2>
+                  <p className="text-sm text-neutral-400 leading-none">
+                    {currentSession.race.circuit} <span className="text-neutral-600 mx-1">•</span> {currentSession.race.city}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 xl:gap-4 pt-4 border-t border-neutral-800 md:mr-[35%] lg:mr-[38%]">
               <div>
-                <h3 className="text-sm font-medium text-neutral-300 tracking-wider">SESSION DETAILS</h3>
-                <p className="text-xs text-neutral-500">{currentSession.race.country}</p>
+                <div className="text-xs text-neutral-500 tracking-wider mb-1">DATE</div>
+                <div className="text-sm font-medium text-white">{formatDate(currentSession.time)}</div>
               </div>
-            </div>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Session:</span>
-                <span className="text-white font-bold">{currentSession.type}</span>
+              <div>
+                <div className="text-xs text-neutral-500 tracking-wider mb-1">TIME</div>
+                <div className="text-sm font-medium text-white font-mono break-words leading-tight">{formatTime(currentSession.time)}</div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Race:</span>
-                <span className="text-white">{currentSession.race.name}</span>
+              <div>
+                <div className="text-xs text-neutral-500 tracking-wider mb-1">DURATION</div>
+                <div className="text-sm font-medium text-white">{currentSession.duration || 90} MIN</div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Circuit:</span>
-                <span className="text-white">{currentSession.race.circuit}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Location:</span>
-                <span className="text-white">
-                  {currentSession.race.city}
-                </span>
+              <div>
+                <div className="text-xs text-neutral-500 tracking-wider mb-1">STATUS</div>
+                <div className={`text-sm font-medium ${isLive ? 'text-red-500' : 'text-neutral-300'}`}>
+                  {isLive ? 'In Progress' : 'Scheduled'}
+                </div>
               </div>
             </div>
           </div>
-          <div>
-            <h3 className="text-sm font-medium text-neutral-300 tracking-wider mb-2">TIMING</h3>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Start Time:</span>
-                <span className="text-white font-mono">{formatTime(currentSession.time)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Duration:</span>
-                <span className="text-white font-mono">{currentSession.duration || 90} minutes</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Date:</span>
-                <span className="text-white font-mono">{formatDate(currentSession.time)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Round:</span>
-                <span className="text-white font-mono">#{currentSession.race.round}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-neutral-700">
-          <Button className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-2 w-full sm:w-auto">
-            <Radio className="w-4 h-4 mr-2" />
-            {isLive ? "Watch Live" : "Set Reminder"}
-          </Button>
-          <Button
-            variant="outline"
-            className="border-neutral-700 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300 bg-transparent text-sm px-3 py-2 w-full sm:w-auto"
-          >
-            Race Details
-          </Button>
+          
         </div>
       </CardContent>
     </Card>

@@ -44,6 +44,7 @@ export interface Race {
   status: "upcoming" | "live" | "completed"
   url: string
   circuitUrl: string
+  circuitImage?: string
   sessions: {
     practice1?: string
     practice2?: string

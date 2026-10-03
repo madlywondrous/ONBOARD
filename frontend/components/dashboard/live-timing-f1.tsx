@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useReducer, useRef, useCallback } from "react"
+import { useEffect, useReducer, useRef, useCallback } from "react"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -646,7 +646,7 @@ import React from "react"
 
 export const LiveTimingF1 = React.memo(function LiveTimingF1() {
   const [state, dispatch] = useReducer(liveDataReducer, initialState)
-  const [timeRemaining, setTimeRemaining] = useState<string>('--:--:--')
+
   const renderCountRef = useRef(0)
   renderCountRef.current++
 
@@ -698,46 +698,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
     }
   }, [state.drivers])
 
-  // Countdown timer effect
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const isLive = state.sessionStatus === "Started" || (state.timingLines.length > 0 && state.sessionStatus !== "Finished" && state.sessionStatus !== "Finalised" && state.sessionStatus !== "Ends" && state.sessionStatus !== null)
-      
-      if (state.sessionInfo?.EndDate && isLive) {
-        // Countdown for live session
-        const endTime = new Date(state.sessionInfo.EndDate).getTime()
-        const now = Date.now()
-        const diff = endTime - now
-        
-        if (diff > 0) {
-          const hours = Math.floor(diff / (1000 * 60 * 60))
-          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-          const seconds = Math.floor((diff % (1000 * 60)) / 1000)
-          setTimeRemaining(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`)
-        } else {
-          setTimeRemaining('00:00:00')
-        }
-      } else if (state.sessionInfo?.StartDate && !isLive) {
-        // Countdown to next session
-        const startTime = new Date(state.sessionInfo.StartDate).getTime()
-        const now = Date.now()
-        const diff = startTime - now
-        
-        if (diff > 0) {
-          const hours = Math.floor(diff / (1000 * 60 * 60))
-          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-          const seconds = Math.floor((diff % (1000 * 60)) / 1000)
-          setTimeRemaining(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`)
-        } else {
-          setTimeRemaining('--:--:--')
-        }
-      } else {
-        setTimeRemaining('--:--:--')
-      }
-    }, 1000)
 
-    return () => clearInterval(timer)
-  }, [state.sessionInfo])
 
   // Helper functions for rendering
   const getTyreImage = (compound: string): string => {
@@ -870,8 +831,8 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                 </div>
               </div>
 
-              {/* MIDDLE: Session-specific Info (Laps for Race, Quali stages, or Session type) */}
-              <div className="flex flex-col items-center justify-center px-4 border-l border-r border-neutral-700">
+              {/* RIGHT SIDE: Session-specific Info (Laps for Race, Quali stages, or Session type) */}
+              <div className="flex flex-col items-end justify-center">
                 {state.sessionInfo?.Type?.toLowerCase().includes('race') || state.sessionInfo?.Type?.toLowerCase().includes('sprint') ? (
                   // Race/Sprint: Show lap counter
                   <>
@@ -905,16 +866,6 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                     </p>
                   </>
                 )}
-              </div>
-
-              {/* RIGHT SIDE: Countdown Timer */}
-              <div className="flex flex-col items-end">
-                <p className="text-xs text-neutral-400 tracking-wider mb-1">
-                  {isLive ? 'TIME LEFT' : 'STARTS IN'}
-                </p>
-                <p className="text-2xl font-bold text-orange-500 tabular-nums font-mono">
-                  {timeRemaining}
-                </p>
               </div>
             </div>
           </CardContent>

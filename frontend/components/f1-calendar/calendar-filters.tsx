@@ -83,7 +83,7 @@ export const CalendarFilters = memo(function CalendarFilters({
   }
 
   return (
-    <div className="mb-6">
+    <div className="">
       {/* Single Line: Filter Buttons + Sort Options */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Filter Buttons */}
