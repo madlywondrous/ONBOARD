@@ -1,10 +1,6 @@
 <div align="center">
-  <img src="frontend/public/image Resource/UI/Onboard.svg" width="150" alt="ONBOARD Logo"/>
-  <h1>ONBOARD - Formula 1 Live Dashboard</h1>
-  <p>A modern, real-time Formula 1 dashboard featuring a live race schedule, driver standings, and instantaneous telemetry timing.</p>
+  <h1>ONBOARD - Formula 1 Dashboard</h1>
 </div>
-
----
 
 ## Overview
 
