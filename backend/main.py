@@ -1,18 +1,22 @@
 """
 ONBOARD F1 Dashboard - Backend API
 FastAPI server for live timing using Official F1 Live Timing API
+
+Event-driven architecture:
+- SignalR callbacks push to asyncio queue (non-blocking)
+- Background processor merges data, triggers broadcasts
+- No polling loop - pure push-based streaming
 """
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi import Response
 from contextlib import asynccontextmanager
 import asyncio
 import base64
 import time
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 import copy
 import json
 from datetime import datetime, date
@@ -48,33 +52,17 @@ load_dotenv()
 
 # Configuration
 API_VERSION = os.getenv("API_VERSION", "v1")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+_default_cors_origins = "http://localhost:3000,http://127.0.0.1:3000"
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", _default_cors_origins).split(",")
 F1_LIVETIMING_BASE = "https://livetiming.formula1.com"
 OPENF1_BASE_URL = os.getenv("OPENF1_BASE_URL", "https://api.openf1.org/v1")
 CURRENT_SEASON_YEAR_ENV = os.getenv("CURRENT_SEASON_YEAR")
 
-# Session-aware polling intervals (in seconds) - optimized for F1 race dynamics
-SESSION_POLL_INTERVALS = {
-    "Race": 0.3,          # 300ms - High frequency for live race action
-    "Sprint": 0.3,        # 300ms - Same as race
-    "Qualifying": 0.5,    # 500ms - Medium frequency for quali runs
-    "Practice": 1.0,      # 1000ms - Lower frequency, save resources
-    "default": 0.5        # 500ms - Default fallback
-}
-
-# Session-specific data priorities for optimized fetching
-SESSION_DATA_PRIORITIES = {
-    "Race": ["timing", "lap_count", "positions", "track_status", "timing_app_data"],
-    "Sprint": ["timing", "lap_count", "positions", "track_status", "timing_app_data"],
-    "Qualifying": ["timing", "timing_stats", "track_status", "timing_app_data"],
-    "Practice": ["timing", "weather", "timing_stats"],
-}
-
 # Cache for storing live data
 live_data_cache: Dict[str, Any] = {}
+_cache_lock = asyncio.Lock()  # Protect cache from concurrent access
 active_connections: List[WebSocket] = []
 current_session_type: Optional[str] = None  # Track current session for adaptive polling
-
 
 
 class SSEBroadcaster:
@@ -83,10 +71,11 @@ class SSEBroadcaster:
     Based on f1-dash patterns: prevents duplicate data and handles disconnections gracefully.
     """
 
-    def __init__(self, max_queue_size: int = 64) -> None:
+    def __init__(self, max_queue_size: int = 500) -> None:  # Increased from 64
         self._max_queue_size = max_queue_size
         self._queues: Set[asyncio.Queue] = set()
         self._lock = asyncio.Lock()
+        self._sequence = 0  # Global sequence number for gap detection
 
     async def subscribe(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=self._max_queue_size)
@@ -109,14 +98,13 @@ class SSEBroadcaster:
             payload: Event payload
             force: If True, broadcast even if payload is duplicate (for keep-alive)
         """
-        # CRITICAL FIX: DISABLE duplicate detection for live sessions
-        # F1 data has nested values that change even when structure appears same
-        # This was causing frontend to freeze on one data point
-        # Always broadcast updates to ensure frontend gets all changes
+        self._sequence += 1
+        sequence = self._sequence
         
         message = {
             "event": event,
             "data": payload if isinstance(payload, str) else _json_dumps(payload),
+            "seq": sequence,
         }
 
         async with self._lock:
@@ -130,19 +118,17 @@ class SSEBroadcaster:
         
         for queue in targets:
             try:
-                # CRITICAL: Clear queue if full to prevent getting stuck (f1-dash pattern)
+                # Backpressure: drop OLDEST (FIFO) not all messages
                 if queue.full():
-                    # Drop oldest messages to make room
                     try:
-                        while queue.full():
-                            queue.get_nowait()
+                        queue.get_nowait()  # Drop one oldest
                     except asyncio.QueueEmpty:
                         pass
                 
                 queue.put_nowait(message)
                 sent_count += 1
             except asyncio.QueueFull:
-                # Queue still full after clearing - mark as stale
+                # Still full after dropping one - mark as stale
                 stale.append(queue)
             except Exception as e:
                 logger.warning(f"Error sending to SSE queue: {e}")
@@ -175,30 +161,15 @@ def _format_sse_event(event_name: str, payload: Any) -> str:
 def _compute_top_level_diff(previous: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
     """
     Return a shallow diff between snapshots.
-    
-    IMPORTANT: Always return the full timing/lap_count/weather data even if the dict reference
-    is the same, because the VALUES INSIDE may have changed during live sessions.
-    This ensures the frontend receives ALL updates during races.
-    
-    CRITICAL FIX: Always include critical keys to ensure frontend gets updates even when
-    data structure appears unchanged but values inside have changed.
+    Only includes keys that actually changed (reference or value).
     """
     diff: Dict[str, Any] = {}
     
-    # Critical keys that should ALWAYS be included if they exist
-    # These change frequently during live sessions - ALWAYS send them to ensure updates
-    always_include_keys = {'timing', 'lap_count', 'weather', 'track_status', 'timing_app_data', 'positions', 'car_data', 'timing_stats', 'session_status'}
-
     for key, value in current.items():
         if key == 'last_update':
             continue
-        
-        # Always include critical live session keys (even if reference is same)
-        # This ensures frontend gets updates even when nested values change
-        if key in always_include_keys:
-            diff[key] = value
-        # For other keys, only include if actually different
-        elif key not in previous or previous[key] != value:
+        # Only include if actually different (reference or value)
+        if key not in previous or previous[key] != value:
             diff[key] = value
 
     for key in previous.keys():
@@ -211,14 +182,8 @@ def _compute_top_level_diff(previous: Dict[str, Any], current: Dict[str, Any]) -
     if 'last_update' in current:
         diff['last_update'] = current['last_update']
     
-    # CRITICAL: If we have any critical keys, always return a diff (even if empty dict)
-    # This ensures we broadcast updates even when only nested values change
-    if any(key in always_include_keys for key in current.keys()):
-        # Ensure we have at least last_update in diff
-        if not diff:
-            diff['last_update'] = current.get('last_update')
-
     return diff
+
 
 # Cache helpers
 
@@ -270,12 +235,6 @@ def _json_dumps(payload: Any) -> str:
     except Exception as exc:
         logger.warning("Failed to serialise payload for SSE: %s", exc)
         return json.dumps(_json_default(payload))
-
-# Track timing progress to detect stale data and trigger forced reconnects
-_timing_progress_lap: int = 0
-_timing_progress_timestamp: float = time.monotonic()
-_TIMING_STALENESS_LAP_GAP: int = 2
-_TIMING_STALENESS_SECONDS: float = 6.0
 
 
 def _sanitize_timing_data(timing: Dict[str, Any]) -> Dict[str, Any]:
@@ -350,8 +309,6 @@ def _extract_max_completed_lap(timing: Dict[str, Any]) -> Optional[int]:
     return max(completed_laps) if completed_laps else None
 
 
-
-
 def _resolve_current_season_year() -> int:
     if CURRENT_SEASON_YEAR_ENV and CURRENT_SEASON_YEAR_ENV.isdigit():
         return int(CURRENT_SEASON_YEAR_ENV)
@@ -414,310 +371,201 @@ async def _fetch_openf1_driver_list() -> Optional[List[Dict[str, Any]]]:
     return sorted_entries
 
 
+# --- Event-driven cache update functions ---
 
-async def update_live_cache():
+async def _build_snapshot_from_client() -> Dict[str, Any]:
+    """Build a snapshot directly from f1_client's in-memory state (already updated by callbacks)."""
+    snapshot: Dict[str, Any] = {}
+    
+    # Session info
+    if f1_client.session_info:
+        snapshot['session'] = f1_client.session_info
+    
+    # Timing data
+    if f1_client.timing_data and f1_client.timing_data.get('Lines'):
+        snapshot['timing'] = _sanitize_timing_data(f1_client.timing_data)
+    
+    # Lap count
+    if f1_client.lap_count and f1_client.lap_count.get('CurrentLap') is not None:
+        snapshot['lap_count'] = f1_client.lap_count
+    
+    # Timing app data (tyres, DRS)
+    if f1_client.timing_app_data:
+        snapshot['timing_app_data'] = _sanitize_timing_app_data(f1_client.timing_app_data)
+    
+    # Positions
+    if f1_client.position_data:
+        snapshot['positions'] = f1_client.position_data
+    
+    # Weather
+    if f1_client.weather_data:
+        snapshot['weather'] = f1_client.weather_data
+    
+    # Driver list
+    if f1_client.driver_list:
+        snapshot['drivers'] = _sanitize_driver_map(f1_client.driver_list)
+    
+    # Race control messages
+    if f1_client.race_control_messages:
+        snapshot['race_control'] = f1_client.race_control_messages
+    
+    # Track status
+    if f1_client.track_status:
+        snapshot['track_status'] = f1_client.track_status
+    
+    # Team radio
+    if f1_client.team_radio:
+        snapshot['team_radio'] = f1_client.team_radio[-25:]
+    
+    # Session status
+    live_status = None
+    if isinstance(f1_client.session_status, dict):
+        live_status = f1_client.session_status.get('Status') or f1_client.session_status.get('SessionStatus')
+    if f1_client.session_data:
+        status_series = f1_client.session_data.get('StatusSeries', [])
+        if isinstance(status_series, list) and status_series:
+            latest = status_series[-1] if status_series else {}
+            if isinstance(latest, dict):
+                live_status = latest.get('SessionStatus') or latest.get('SesionStatus')
+    
+    snapshot['session_status'] = {'Status': live_status or 'Unknown'}
+    
+    # Car telemetry
+    if f1_client.car_data:
+        snapshot['car_data'] = f1_client.car_data
+    
+    # Timing stats
+    if f1_client.timing_stats:
+        snapshot['timing_stats'] = f1_client.timing_stats
+    
+    snapshot['last_update'] = datetime.utcnow().isoformat()
+    
+    return snapshot
+
+
+def _session_status_payload() -> Dict[str, str]:
+    """Return the current status from its dedicated feed, with legacy fallback."""
+    if isinstance(f1_client.session_status, dict):
+        status = f1_client.session_status.get('Status') or f1_client.session_status.get('SessionStatus')
+        if status:
+            return {'Status': str(status)}
+
+    status_series = f1_client.session_data.get('StatusSeries', []) if isinstance(f1_client.session_data, dict) else []
+    if isinstance(status_series, list) and status_series and isinstance(status_series[-1], dict):
+        status = status_series[-1].get('SessionStatus') or status_series[-1].get('SesionStatus')
+        if status:
+            return {'Status': str(status)}
+    return {'Status': 'Unknown'}
+
+
+def _event_snapshot(event_type: str, data: Any) -> Tuple[Optional[str], Any, Any]:
+    """Map a client callback to the full cache value and its small stream patch."""
+    mappings = {
+        'session': ('session', f1_client.session_info),
+        'timing': ('timing', f1_client.timing_data),
+        'position': ('positions', f1_client.position_data),
+        'weather': ('weather', f1_client.weather_data),
+        'drivers': ('drivers', f1_client.driver_list),
+        'track_status': ('track_status', f1_client.track_status),
+        'lap_count': ('lap_count', f1_client.lap_count),
+        'car_data': ('car_data', f1_client.car_data),
+        'timing_app': ('timing_app_data', f1_client.timing_app_data),
+        'timing_stats': ('timing_stats', f1_client.timing_stats),
+    }
+    if event_type in mappings:
+        key, current_value = mappings[event_type]
+        patch = data
+        if event_type == 'timing':
+            patch = _sanitize_timing_data(data) if isinstance(data, dict) else data
+        elif event_type == 'timing_app':
+            patch = _sanitize_timing_app_data(data) if isinstance(data, dict) else data
+        elif event_type == 'drivers':
+            patch = _sanitize_driver_map(data) if isinstance(data, dict) else data
+        return key, current_value, patch
+
+    if event_type == 'race_control':
+        return 'race_control', f1_client.race_control_messages, f1_client.race_control_messages
+    if event_type == 'team_radio':
+        recent_radio = f1_client.team_radio[-25:]
+        return 'team_radio', recent_radio, recent_radio
+    if event_type in {'session_data', 'session_status'}:
+        status = _session_status_payload()
+        return 'session_status', status, status
+    return None, None, None
+
+
+async def _on_data_update(event_type: str, data: Any):
     """
-    Update live data cache from F1 API with session-aware optimization.
-    Adapts data fetching based on current session type (Race/Quali/Practice).
+    Callback triggered by f1_client when data changes.
+    Builds snapshot, computes diff, updates cache, broadcasts to SSE clients.
     """
     global current_session_type
     
     try:
-        previous_state = live_data_cache.copy()
-        snapshot: Dict[str, Any] = {}
+        async with _cache_lock:
+            if event_type == 'initial':
+                # Only executed at startup.  Keep a complete snapshot for new
+                # subscribers without repeatedly copying the telemetry history.
+                live_data_cache.clear()
+                live_data_cache.update(await _build_snapshot_from_client())
+                return
 
-        # Fetch session info first to determine session type
-        session_info_res = await f1_client.get_session_info()
-        session_info = _extract_task_result(session_info_res, "session_info")
-        
-        if session_info:
-            snapshot['session'] = session_info
-            new_session_type = session_info.get('Type', 'Unknown')
-            
-            # Log session type changes for adaptive polling
-            if new_session_type != current_session_type:
-                current_session_type = new_session_type
-                logger.info(f"Session type changed: {current_session_type}")
-                logger.info(f"Adaptive polling: {SESSION_POLL_INTERVALS.get(current_session_type, 0.5)}s")
-        elif not previous_state.get('session'):
-            logger.info("Waiting for session info...")
+            key, current_value, patch = _event_snapshot(event_type, data)
+            if key is None:
+                return
 
-        # Determine session-specific data priorities
-        session_type = current_session_type or "default"
-        is_race_session = session_type in ["Race", "Sprint"]
-        is_quali_session = session_type == "Qualifying"
-        
-        # Parallel fetch based on session type - optimize critical data first
-        if is_race_session:
-            # Race: Prioritize timing, positions, lap count, track status
-            (
-                timing_res,
-                session_status_res,
-                positions_res,
-                track_status_res,
-                timing_app_res,
-                weather_res,
-                drivers_res,
-                race_control_res,
-                car_data_res,
-                timing_stats_res,
-            ) = await asyncio.gather(
-                f1_client.get_timing_data(),
-                f1_client.get_session_status(),
-                f1_client.get_position_data(),
-                f1_client.get_track_status(),
-                f1_client.get_timing_app_data(),
-                f1_client.get_weather_data(),
-                f1_client.get_driver_list(),
-                f1_client.get_race_control_messages(),
-                f1_client.get_car_data(),
-                f1_client.get_timing_stats(),
-                return_exceptions=True,
-            )
-        elif is_quali_session:
-            # Qualifying: Prioritize timing stats, timing data, track status
-            (
-                timing_res,
-                timing_stats_res,
-                track_status_res,
-                session_status_res,
-                timing_app_res,
-                positions_res,
-                weather_res,
-                drivers_res,
-                race_control_res,
-                car_data_res,
-            ) = await asyncio.gather(
-                f1_client.get_timing_data(),
-                f1_client.get_timing_stats(),
-                f1_client.get_track_status(),
-                f1_client.get_session_status(),
-                f1_client.get_timing_app_data(),
-                f1_client.get_position_data(),
-                f1_client.get_weather_data(),
-                f1_client.get_driver_list(),
-                f1_client.get_race_control_messages(),
-                f1_client.get_car_data(),
-                return_exceptions=True,
-            )
-        else:
-            # Practice/Default: Balanced fetching
-            (
-                timing_res,
-                session_status_res,
-                positions_res,
-                weather_res,
-                drivers_res,
-                race_control_res,
-                track_status_res,
-                car_data_res,
-                timing_stats_res,
-                timing_app_res,
-            ) = await asyncio.gather(
-                f1_client.get_timing_data(),
-                f1_client.get_session_status(),
-                f1_client.get_position_data(),
-                f1_client.get_weather_data(),
-                f1_client.get_driver_list(),
-                f1_client.get_race_control_messages(),
-                f1_client.get_track_status(),
-                f1_client.get_car_data(),
-                f1_client.get_timing_stats(),
-                f1_client.get_timing_app_data(),
-                return_exceptions=True,
-            )
+            if key == 'session' and isinstance(current_value, dict):
+                new_session_type = current_value.get('Type')
+                if new_session_type and new_session_type != current_session_type:
+                    current_session_type = new_session_type
+                    logger.info("Session type changed: %s", current_session_type)
 
-        # Process timing data (critical for all sessions)
-        timing = _extract_task_result(timing_res, "timing_data")
-        if timing and timing.get('Lines'):
-            sanitized_timing = _sanitize_timing_data(timing)
-            snapshot['timing'] = sanitized_timing
-        elif not previous_state.get('timing'):
-            logger.info("Waiting for timing data...")
-        
-        # Get LAP COUNT - CRITICAL for race/sprint sessions
-        lap_count = f1_client.lap_count or {}
-        if not lap_count.get('CurrentLap'):
-            session_status = _extract_task_result(session_status_res, "session_status")
-            fallback_lap = session_status.get('lap_count') if isinstance(session_status, dict) else None
-            if fallback_lap and fallback_lap.get('CurrentLap') is not None:
-                lap_count = fallback_lap
+            # The F1 client replaces state objects when it merges a patch, so
+            # this is safe to retain for the next initial snapshot.  The event
+            # payload remains the small incremental patch, not the full topic.
+            live_data_cache[key] = current_value
+            live_data_cache['last_update'] = datetime.utcnow().isoformat()
+            diff_payload = {key: patch, 'last_update': live_data_cache['last_update']}
 
-        if lap_count and lap_count.get('CurrentLap') is not None:
-            snapshot['lap_count'] = lap_count
-        elif not previous_state.get('lap_count') and is_race_session:
-            logger.info("No lap count data available yet (Race session)")
-        
-        # Timing app data (tyres, DRS, etc.) - critical for race strategy
-        timing_app = _extract_task_result(timing_app_res, "timing_app_data") or f1_client.timing_app_data
-        if timing_app:
-            snapshot['timing_app_data'] = _sanitize_timing_app_data(timing_app)
-        
-        # Positions - more critical in race sessions
-        positions = _extract_task_result(positions_res, "position_data")
-        if positions:
-            snapshot['positions'] = positions
-        
-        # Weather - important for strategy
-        weather = _extract_task_result(weather_res, "weather_data")
-        if weather:
-            snapshot['weather'] = weather
-        
-        # Driver list
-        drivers = _extract_task_result(drivers_res, "driver_list")
-        if drivers:
-            snapshot['drivers'] = _sanitize_driver_map(drivers)
-        
-        # Race control messages - critical for safety car, flags
-        messages = _extract_task_result(race_control_res, "race_control_messages")
-        if messages:
-            snapshot['race_control'] = messages
-        
-        # Track status - critical for flags, safety car
-        track_status = _extract_task_result(track_status_res, "track_status")
-        if track_status:
-            snapshot['track_status'] = track_status
-        
-        # Team radio - keep last 25 messages
-        team_radio = f1_client.team_radio
-        if team_radio:
-            snapshot['team_radio'] = team_radio[-25:]
-
-        # CRITICAL: Include SessionStatus so frontend knows if session is live
-        # SessionStatus.Status can be "Started", "Finished", "Finalised", "Ends"
-        session_status_data = _extract_task_result(session_status_res, "session_status") if 'session_status' not in locals() else session_status
-        if not isinstance(session_status_data, dict):
-            session_status_data = {}
-        
-        # Also get session_data for StatusSeries
-        session_data = f1_client.session_data
-        
-        # Determine live status from SessionStatus or SessionData
-        live_status = None
-        if isinstance(session_status_data, dict):
-            # get_session_status returns {"session_data": ..., "lap_count": ...}
-            sd = session_status_data.get('session_data', {})
-            if isinstance(sd, dict):
-                status_series = sd.get('StatusSeries', [])
-                if isinstance(status_series, list) and status_series:
-                    # Get the latest status
-                    latest = status_series[-1] if status_series else {}
-                    if isinstance(latest, dict):
-                        live_status = latest.get('SessionStatus') or latest.get('SesionStatus')
-        
-        # Fallback: check f1_client.session_data directly
-        if not live_status and isinstance(session_data, dict):
-            status_series = session_data.get('StatusSeries', [])
-            if isinstance(status_series, list) and status_series:
-                latest = status_series[-1] if status_series else {}
-                if isinstance(latest, dict):
-                    live_status = latest.get('SessionStatus') or latest.get('SesionStatus')
-        
-        # Include session_status in snapshot
-        snapshot['session_status'] = {
-            'Status': live_status or 'Unknown'
-        }
-
-        # Ensure session info persists if available
-        if 'session' not in snapshot and previous_state.get('session'):
-            snapshot['session'] = previous_state['session']
-
-        # Car telemetry (speed, throttle, etc.) - more important in race
-        car_data = _extract_task_result(car_data_res, "car_data")
-        if car_data:
-            snapshot['car_data'] = car_data
-
-        # Timing stats (purple sectors etc.) - critical for qualifying
-        timing_stats = _extract_task_result(timing_stats_res, "timing_stats")
-        if timing_stats:
-            snapshot['timing_stats'] = timing_stats
-        
-        snapshot['last_update'] = datetime.utcnow().isoformat()
-
-        # Work on deep copies to avoid accidental shared references with SignalR store
-        snapshot_copy = {key: _clone_for_cache(value) for key, value in snapshot.items()}
-        
-        # CRITICAL FIX: Create a deep copy of previous_state for comparison
-        # This ensures we're comparing actual data, not references
-        previous_state_copy = {key: _clone_for_cache(value) for key, value in previous_state.items()}
-        
-        diff_payload = _compute_top_level_diff(previous_state_copy, snapshot_copy)
-
-        # Replace live cache atomically to avoid partial states
-        live_data_cache.clear()
-        live_data_cache.update(snapshot_copy)
-        
-        # OPTIMIZED: Always include critical keys in diff to ensure updates are broadcast
-        # This ensures frontend gets updates even when only nested values change
-        critical_keys_present = any(key in snapshot_copy for key in ['timing', 'lap_count', 'weather', 'track_status', 'timing_app_data'])
-        if critical_keys_present:
-            # Always ensure critical keys are in diff payload
-            if not diff_payload:
-                diff_payload = {}
-            # Always include last_update timestamp
-            diff_payload['last_update'] = snapshot_copy.get('last_update')
-            # Always include critical keys if they exist
-            for key in ['timing', 'lap_count', 'weather', 'track_status', 'timing_app_data', 'positions', 'car_data', 'session_status']:
-                if key in snapshot_copy:
-                    diff_payload[key] = snapshot_copy[key]
-        
-        # Log cache summary only when there are changes or every 20 updates (reduced logging)
-        if diff_payload or (hasattr(update_live_cache, '_update_count') and update_live_cache._update_count % 20 == 0):
-            logger.debug(
-                "[+] [%s] Cache updated: timing=%s, lap=%s, track_status=%s, diff_keys=%s",
-                session_type,
-                len(snapshot_copy.get('timing', {}).get('Lines', {})),
-                snapshot_copy.get('lap_count', {}).get('CurrentLap') if snapshot_copy.get('lap_count') else None,
-                snapshot_copy.get('track_status', {}).get('Status', '?'),
-                list(diff_payload.keys()) if diff_payload else []
-            )
-        
-        # Track update count for periodic logging
-        if not hasattr(update_live_cache, '_update_count'):
-            update_live_cache._update_count = 0
-        update_live_cache._update_count += 1
-
-        return diff_payload
-        
+        subscriber_count = await sse_broadcaster.broadcast("update", diff_payload)
+        if not hasattr(_on_data_update, '_count'):
+            _on_data_update._count = 0
+        _on_data_update._count += 1
+        if _on_data_update._count % 100 == 0:
+            logger.info("Broadcast #%s (%s to %s clients)", _on_data_update._count, key, subscriber_count)
+    
     except Exception as e:
-        logger.error(f"Error updating live cache: {e}", exc_info=True)
-        return None
+        logger.error(f"Error in _on_data_update: {e}", exc_info=True)
 
 
-async def poll_live_data():
-    """
-    STREAM DATA: SignalR pushes updates, we broadcast them immediately
-    """
-    global _timing_progress_lap, _timing_progress_timestamp, current_session_type
+async def _on_session_reset(data: Dict[str, Any]):
+    """Handle session transition - clear cache and broadcast reset event."""
+    global live_data_cache
+    logger.warning(f"Session reset: {data.get('old_session')} -> {data.get('new_session')}")
     
-    logger.info("Starting live data broadcast loop...")
+    async with _cache_lock:
+        live_data_cache.clear()
     
-    while True:
-        try:
-            # Reconnect ONLY if connection is dead
-            if not f1_client.is_alive():
-                logger.warning("Connection dead, reconnecting...")
-                await f1_client.reconnect_if_needed()
-            
-            # Get current data (SignalR updates it automatically in background)
-            diff_payload = await update_live_cache()
-            
-            # Broadcast IMMEDIATELY if we have data
-            if diff_payload:
-                subscriber_count = await sse_broadcaster.broadcast("update", diff_payload)
-                # Log occasionally
-                if not hasattr(poll_live_data, '_count'):
-                    poll_live_data._count = 0
-                poll_live_data._count += 1
-                if poll_live_data._count % 100 == 0:
-                    logger.info(f"Broadcast #{poll_live_data._count} ({len(diff_payload)} keys to {subscriber_count} clients)")
-            
-            # Very fast polling to catch SignalR updates instantly
-            await asyncio.sleep(0.05)  # 50ms = 20 updates per second
+    # Broadcast session reset event to all clients
+    await sse_broadcaster.broadcast("session_reset", data)
 
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            await asyncio.sleep(0.5)
+
+# Register callbacks with f1_client
+f1_client.on_event('timing', lambda d: asyncio.create_task(_on_data_update('timing', d)))
+f1_client.on_event('position', lambda d: asyncio.create_task(_on_data_update('position', d)))
+f1_client.on_event('weather', lambda d: asyncio.create_task(_on_data_update('weather', d)))
+f1_client.on_event('drivers', lambda d: asyncio.create_task(_on_data_update('drivers', d)))
+f1_client.on_event('race_control', lambda d: asyncio.create_task(_on_data_update('race_control', d)))
+f1_client.on_event('track_status', lambda d: asyncio.create_task(_on_data_update('track_status', d)))
+f1_client.on_event('lap_count', lambda d: asyncio.create_task(_on_data_update('lap_count', d)))
+f1_client.on_event('car_data', lambda d: asyncio.create_task(_on_data_update('car_data', d)))
+f1_client.on_event('timing_app', lambda d: asyncio.create_task(_on_data_update('timing_app', d)))
+f1_client.on_event('timing_stats', lambda d: asyncio.create_task(_on_data_update('timing_stats', d)))
+f1_client.on_event('team_radio', lambda d: asyncio.create_task(_on_data_update('team_radio', d)))
+f1_client.on_event('session', lambda d: asyncio.create_task(_on_data_update('session', d)))
+f1_client.on_event('session_data', lambda d: asyncio.create_task(_on_data_update('session_data', d)))
+f1_client.on_event('session_status', lambda d: asyncio.create_task(_on_data_update('session_status', d)))
+f1_client.on_event('session_reset', lambda d: asyncio.create_task(_on_session_reset(d)))
 
 
 @asynccontextmanager
@@ -727,10 +575,9 @@ async def lifespan(app: FastAPI):
     logger.info("ONBOARD F1 Backend starting...")
     logger.info(f"F1 Live Timing: {F1_LIVETIMING_BASE}")
     logger.info(f"CORS Origins: {CORS_ORIGINS}")
-    logger.info(f"Session-aware polling enabled: Race=300ms, Quali=500ms, Practice=1000ms")
+    logger.info("Event-driven architecture: NO polling loop, pure push-based streaming")
     
     # Start managed F1 Live Timing connection with auto-reconnect
-    # Based on f1-dash pattern: continuous monitoring with 30s timeout
     f1_task = asyncio.create_task(f1_client.start_managed_connection())
     
     # Wait for initial connection
@@ -745,7 +592,7 @@ async def lifespan(app: FastAPI):
     # Populate cache with initial data BEFORE starting SSE
     # This prevents "No data" flash on frontend
     logger.info("Fetching initial data...")
-    await update_live_cache()
+    await _on_data_update('initial', None)
     
     # Wait a moment for data to propagate
     await asyncio.sleep(0.5)
@@ -756,14 +603,10 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning(" Initial cache is empty - may be no active session")
     
-    # Start background task for polling live data
-    poll_task = asyncio.create_task(poll_live_data())
-    
     yield
     
     # Shutdown
     logger.info("ONBOARD F1 Backend shutting down...")
-    poll_task.cancel()
     f1_task.cancel()
     f1_client.disconnect()
 
@@ -780,15 +623,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# GZip middleware for compressing responses
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-
 
 # ===== API ENDPOINTS =====
 
@@ -809,12 +648,18 @@ async def health():
     """Health check endpoint"""
     last_message_time = f1_client._t_last_message
     time_since_message = time.time() - last_message_time if last_message_time else None
+    last_data_update = f1_client._t_last_data_update
+    last_timing_update = f1_client._t_last_timing_update
+    time_since_data = time.time() - last_data_update if last_data_update else None
+    time_since_timing = time.time() - last_timing_update if last_timing_update else None
     
     return {
         "status": "ok",
         "f1_connected": f1_client.connected,
         "f1_alive": f1_client.is_alive(),
         "last_message_seconds_ago": round(time_since_message, 1) if time_since_message else None,
+        "last_data_update_seconds_ago": round(time_since_data, 1) if time_since_data else None,
+        "last_timing_update_seconds_ago": round(time_since_timing, 1) if time_since_timing else None,
         "has_timing_data": bool(f1_client.timing_data),
         "has_session_info": bool(f1_client.session_info),
         "timestamp": datetime.utcnow().isoformat()
@@ -987,9 +832,6 @@ async def get_teams():
         return MOCK_TEAMS
 
 
-# ===== STANDINGS ENDPOINTS =====
-
-
 # ===== SCHEDULE ENDPOINTS (f1-dash compatible) =====
 
 @app.get("/api/schedule")
@@ -1013,9 +855,6 @@ async def get_next_schedule_endpoint():
     except Exception as exc:
         logger.error(f"Error getting next schedule: {exc}")
         raise HTTPException(status_code=500, detail="Unable to fetch schedule")
-
-
-
 
 
 # ===== SSE (SERVER-SENT EVENTS) ENDPOINT =====
@@ -1052,7 +891,7 @@ async def sse_endpoint():
                 logger.warning(f" [{client_id}] Cache still empty after wait - sending empty initial event")
                 yield f"event: initial\ndata: {{}}\n\n".encode("utf-8")
 
-            # CRITICAL: Track last sent message to detect stuck connections (f1-dash pattern)
+            # Track last sent message to detect stuck connections (f1-dash pattern)
             last_message_time = time.time()
             consecutive_timeouts = 0
             max_consecutive_timeouts = 3
@@ -1061,7 +900,6 @@ async def sse_endpoint():
             while True:
                 try:
                     # Wait for updates from the broadcast (10s timeout for keep-alive)
-                    # CRITICAL: Use shorter timeout to detect stuck connections faster
                     message = await asyncio.wait_for(queue.get(), timeout=10.0)
                     
                     # Reset timeout counter on successful message
@@ -1070,6 +908,7 @@ async def sse_endpoint():
                     
                     event_name = message.get("event") or "message"
                     data_payload = message.get("data", "")
+                    seq = message.get("seq", 0)
                     
                     # Format as SSE
                     data_str = data_payload if isinstance(data_payload, str) else _json_dumps(data_payload)
@@ -1080,8 +919,7 @@ async def sse_endpoint():
                     current_time = time.time()
                     time_since_last = current_time - last_message_time
                     
-                    # CRITICAL: Detect stuck connections (f1-dash pattern)
-                    # If no messages for 30+ seconds, connection might be stuck
+                    # Detect stuck connections (f1-dash pattern)
                     if time_since_last > 30.0:
                         logger.warning(f" [{client_id}] No messages for {time_since_last:.1f}s - connection may be stuck")
                         # Force a ping to test connection
@@ -1111,6 +949,8 @@ async def sse_endpoint():
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Content-Type-Options": "nosniff",
+            "Connection": "keep-alive",
         },
     )
 
@@ -1131,10 +971,13 @@ async def websocket_live_timing(websocket: WebSocket):
     
     try:
         # Send initial data
+        async with _cache_lock:
+            initial_data = dict(live_data_cache)
+        
         await websocket.send_json({
             "type": "connected",
             "message": "Connected to ONBOARD F1 Live Timing",
-            "data": live_data_cache
+            "data": initial_data
         })
         
         # Keep connection alive
@@ -1147,7 +990,8 @@ async def websocket_live_timing(websocket: WebSocket):
                 await websocket.send_json({"type": "ping"})
                 
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        if websocket in active_connections:
+            active_connections.remove(websocket)
         logger.info("WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
@@ -1155,7 +999,38 @@ async def websocket_live_timing(websocket: WebSocket):
             active_connections.remove(websocket)
 
 
+# ===== METRICS ENDPOINT =====
 
+@app.get("/api/metrics")
+async def metrics():
+    """Health metrics for observability"""
+    async with _cache_lock:
+        cache_size = sum(len(str(v)) for v in live_data_cache.values())
+        cache_keys = list(live_data_cache.keys())
+    
+    return {
+        "cache": {
+            "keys": cache_keys,
+            "size_bytes": cache_size,
+            "has_timing": "timing" in live_data_cache,
+            "timing_drivers": len(live_data_cache.get("timing", {}).get("Lines", {})),
+        },
+        "sse": {
+            "subscribers": len(sse_broadcaster._queues),
+            "max_queue_size": sse_broadcaster._max_queue_size,
+        },
+        "f1_client": {
+            "connected": f1_client.connected,
+            "alive": f1_client.is_alive(),
+            "last_message_age": time.time() - f1_client._t_last_message if f1_client._t_last_message else None,
+            "queue_size": f1_client._update_queue.qsize(),
+        },
+        "session": {
+            "type": current_session_type,
+            "name": f1_client._session_name,
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 
 if __name__ == "__main__":

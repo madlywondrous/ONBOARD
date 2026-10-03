@@ -71,7 +71,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
         </Button>
         <div className="text-lg sm:text-xl text-neutral-400">
           <span className="hidden sm:inline">ONBOARD / </span>
-          <span className="text-red-500 font-semibold">2025 SEASON</span>
+          <span className="text-red-500 font-semibold">2026 SEASON</span>
         </div>
       </div>
       <div className="flex items-center gap-1 sm:gap-2">

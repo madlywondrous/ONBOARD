@@ -179,6 +179,7 @@ type LiveDataState = {
   teamRadio: TeamRadioMessage[]
   timingStats: TimingStats | null
   lapCounter: {CurrentLap: number; TotalLaps: number} | null
+  qualifyingPart: number | null
   loading: boolean
   lastUpdateTime: number
 }
@@ -186,6 +187,7 @@ type LiveDataState = {
 type LiveDataAction =
   | { type: 'SET_INITIAL_DATA'; payload: Partial<LiveDataState> }
   | { type: 'UPDATE_FROM_WEBSOCKET'; payload: JsonRecord }
+  | { type: 'RESET_SESSION' }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_DRIVERS'; payload: { [key: string]: Driver } }
 
@@ -468,10 +470,13 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
   switch (action.type) {
     case 'SET_INITIAL_DATA':
       return { ...state, ...action.payload, loading: false }
+
+    case 'RESET_SESSION':
+      return { ...initialState, drivers: state.drivers }
     
     case 'UPDATE_FROM_WEBSOCKET': {
       const data = action.payload
-      
+
       // CRITICAL: Always create updates object to ensure state changes
       const updates: Partial<LiveDataState> = {}
 
@@ -505,6 +510,12 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
       if (timingData) {
         const mergedTimingLines = mergeTimingLines(state.timingLines, timingData)
         updates.timingLines = mergedTimingLines
+        const qualifyingPart = asNumber(
+          timingData.SessionPart ?? timingData.SessionPartNumber ?? timingData.QualifyingPart
+        )
+        if (qualifyingPart && qualifyingPart >= 1 && qualifyingPart <= 3) {
+          updates.qualifyingPart = qualifyingPart
+        }
       }
 
       if (lapCountData) {
@@ -594,9 +605,8 @@ function liveDataReducer(state: LiveDataState, action: LiveDataAction): LiveData
       const newState = { 
         ...state, 
         ...updates, 
+        loading: false,
         lastUpdateTime: currentTime,
-        // Force new object reference to ensure React detects changes
-        _forceUpdate: currentTime
       }
       
       return newState
@@ -627,6 +637,7 @@ const initialState: LiveDataState = {
   teamRadio: [],
   timingStats: null,
   lapCounter: null,
+  qualifyingPart: null,
   loading: true,
   lastUpdateTime: 0
 }
@@ -652,7 +663,12 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
   // This is the f1-dash pattern: direct callback instead of useEffect on state
   const onSSEUpdate = useCallback((updateData: Record<string, unknown>) => {
     if (!updateData) return
-    dispatch({ type: 'SET_LOADING', payload: false })
+    if (updateData.session_reset) {
+      dispatch({ type: 'RESET_SESSION' })
+      return
+    }
+    // Single dispatch: the reducer already sets loading=false in UPDATE_FROM_WEBSOCKET.
+    // Two dispatches caused two render cycles per SSE message — contributing to stutter.
     dispatch({ type: 'UPDATE_FROM_WEBSOCKET', payload: updateData })
   }, [])
 
@@ -762,6 +778,8 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
 
   // F1 SessionStatus.Status: "Started" = live, "Finished"/"Finalised"/"Ends" = ended
   const isLive = state.sessionStatus === "Started" || (state.timingLines.length > 0 && state.sessionStatus !== "Finished" && state.sessionStatus !== "Finalised" && state.sessionStatus !== "Ends" && state.sessionStatus !== null)
+  const liveIndicator = !sseConnected ? 'RECONNECTING' : isLive ? 'LIVE' : 'WAITING'
+  const qualifyingPart = state.qualifyingPart ?? 1
 
   const DEFAULT_FLAG_CODE = "un"
 
@@ -845,7 +863,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                       <span className={`text-xs font-bold ${
                         isLive ? 'text-red-500' : 'text-neutral-600'
                       }`}>
-                        {isLive ? 'LIVE' : 'OFFLINE'}
+                        {liveIndicator}
                       </span>
                     </div>
                   </div>
@@ -868,13 +886,13 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
                     <p className="text-xs text-neutral-400 tracking-wider mb-1">STAGE</p>
                     <div className="flex items-center gap-1">
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                        true ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
+                        qualifyingPart === 1 ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
                       }`}>Q1</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                        false ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
+                        qualifyingPart === 2 ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
                       }`}>Q2</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                        false ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
+                        qualifyingPart === 3 ? 'bg-green-600 text-white' : 'bg-neutral-700 text-neutral-400'
                       }`}>Q3</span>
                     </div>
                   </>
