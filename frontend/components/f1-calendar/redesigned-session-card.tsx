@@ -65,7 +65,7 @@ export function RedesignedSessionCard({
       {currentSession.race.circuitImage && (
         <div className="absolute right-4 top-4 bottom-4 w-[38%] opacity-90 pointer-events-none transition-opacity group-hover:opacity-100 brightness-110 hidden md:block z-0"
              style={{
-               backgroundImage: `url(${currentSession.race.circuitImage})`,
+               backgroundImage: `url('${currentSession.race.circuitImage}')`,
                backgroundSize: 'contain',
                backgroundPosition: 'right center',
                backgroundRepeat: 'no-repeat',
@@ -102,7 +102,7 @@ export function RedesignedSessionCard({
             {currentSession.race.circuitImage && (
               <div className="mt-6 w-full h-32 opacity-80 brightness-110 md:hidden"
                    style={{
-                     backgroundImage: `url(${currentSession.race.circuitImage})`,
+                     backgroundImage: `url('${currentSession.race.circuitImage}')`,
                      backgroundSize: 'contain',
                      backgroundPosition: 'center',
                      backgroundRepeat: 'no-repeat',

@@ -213,9 +213,49 @@ export async function loadF1CalendarData(): Promise<Race[]> {
 
     return races
   } catch (error) {
-    console.error('Error loading F1 calendar from OpenF1 API, falling back to JSON:', error)
-    const jsonData = await import('./f1-2025-calendar.json')
-    return transformRaceData(jsonData.default)
+    console.warn('Error loading F1 calendar from OpenF1 API, falling back to Jolpi/Ergast API:', error)
+    
+    try {
+      const fallbackRes = await fetch('https://api.jolpi.ca/ergast/f1/current.json')
+      if (!fallbackRes.ok) throw new Error('Jolpi fallback failed')
+      
+      const fallbackData = await fallbackRes.json()
+      const races = fallbackData.MRData.RaceTable.Races
+      
+      const parsedRaces: Race[] = races.map((r: any) => {
+        const raceDateStart = `${r.date}T${r.time || '15:00:00Z'}`
+        const race: Race = {
+          id: generateRaceId(r.raceName, parseInt(r.round)),
+          name: r.raceName,
+          circuit: r.Circuit.circuitName,
+          country: r.Circuit.Location.country,
+          city: r.Circuit.Location.locality,
+          date: r.date,
+          time: r.time ? r.time.replace('Z', '') : '15:00:00',
+          round: parseInt(r.round),
+          status: 'upcoming', 
+          url: createRaceUrl(r.raceName),
+          circuitUrl: createCircuitUrl(r.Circuit.circuitName),
+          sessions: {
+            race: raceDateStart,
+            practice1: r.FirstPractice ? `${r.FirstPractice.date}T${r.FirstPractice.time}` : undefined,
+            practice2: r.SecondPractice ? `${r.SecondPractice.date}T${r.SecondPractice.time}` : undefined,
+            practice3: r.ThirdPractice ? `${r.ThirdPractice.date}T${r.ThirdPractice.time}` : undefined,
+            qualifying: r.Qualifying ? `${r.Qualifying.date}T${r.Qualifying.time}` : undefined,
+            sprint: r.Sprint ? `${r.Sprint.date}T${r.Sprint.time}` : undefined,
+            sprintQualifying: r.SprintQualifying ? `${r.SprintQualifying.date}T${r.SprintQualifying.time}` : undefined,
+          }
+        }
+        race.status = determineRaceStatusFromDates(race)
+        return race
+      })
+      
+      return parsedRaces
+    } catch (fallbackError) {
+      console.warn('Fallback to Jolpi failed, using hardcoded JSON:', fallbackError)
+      const jsonData = await import('./f1-2025-calendar.json')
+      return transformRaceData(jsonData.default)
+    }
   }
 }
 

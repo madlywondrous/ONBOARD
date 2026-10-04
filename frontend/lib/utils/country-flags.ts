@@ -29,7 +29,8 @@ const COUNTRY_FLAG_MAP: Record<string, string> = {
   'UAE': 'uae',
   'United Arab Emirates': 'uae',
   'USA': 'usa',
-  'United States': 'usa'
+  'United States': 'usa',
+  'Malaysia': 'brn' // Fallback for the dummy test session
 }
 
 /**

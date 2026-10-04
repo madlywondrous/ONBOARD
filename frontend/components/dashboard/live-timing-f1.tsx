@@ -688,7 +688,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
   // Handle SSE errors
   useEffect(() => {
     if (sseError) {
-      console.error('SSE connection error:', sseError)
+      console.warn('SSE connection error:', sseError)
     }
   }, [sseError])
 
@@ -704,7 +704,7 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
           })
           dispatch({ type: 'SET_DRIVERS', payload: driversMap })
         })
-        .catch(err => console.error('Failed to fetch drivers:', err))
+        .catch(err => console.warn('Failed to fetch drivers:', err))
     }
   }, [state.drivers])
 
@@ -916,8 +916,8 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
 
         {/* Detailed Weather Card - Spans 2 columns */}
         <Card className="bg-neutral-900 border-neutral-700 overflow-hidden sm:col-span-2 flex flex-col">
-          <CardHeader className="px-3 py-1 border-b border-neutral-800 flex-shrink-0">
-            <CardTitle className="text-[9px] font-bold text-neutral-400 tracking-wider">
+          <CardHeader className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 flex flex-row items-center justify-start flex-shrink-0 rounded-t-xl">
+            <CardTitle className="text-xs font-formula1 text-neutral-400 tracking-widest leading-[16px]">
               WEATHER
             </CardTitle>
           </CardHeader>
@@ -1293,93 +1293,43 @@ export const LiveTimingF1 = React.memo(function LiveTimingF1() {
         <div className="sm:col-span-1 flex flex-col gap-3" style={{ height: 'calc(100vh - 178px)' }}>
           {/* Race Control - Takes full height */}
           <Card className="bg-neutral-900 border-neutral-700 overflow-hidden flex flex-col flex-1">
-            <CardHeader className="px-3 py-2 border-b border-neutral-800 flex-shrink-0">
-              <CardTitle className="text-[10px] font-bold text-neutral-400 tracking-wider">
+            <CardHeader className="bg-neutral-800/50 border-b border-neutral-700 px-3 py-1.5 flex flex-row items-center justify-start flex-shrink-0 rounded-t-xl">
+              <CardTitle className="text-xs font-formula1 text-neutral-400 tracking-widest leading-[16px]">
                 RACE CONTROL
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+            <CardContent className="p-0 flex-1 flex flex-col min-h-0 bg-black/20">
               <div className="flex-1 overflow-y-auto timing-scroll">
               {state.raceControl.length > 0 ? (
-                <div className="py-2 px-3">
+                <div className="py-1 px-1">
                   {[...state.raceControl].reverse().map((msg: RaceControlMessage, idx: number) => {
-                    // Determine icon and color based on message type
-                    const getMessageIcon = () => {
-                      const message = msg.Message?.toLowerCase() || ''
-                      const flag = msg.Flag?.toLowerCase() || ''
-                      
-                      if (flag === 'yellow' || message.includes('yellow')) {
-                        return { icon: AlertTriangle, color: 'text-yellow-500' }
-                      } else if (flag === 'green' || message.includes('green') || message.includes('clear')) {
-                        return { icon: Flag, color: 'text-green-500' }
-                      } else if (flag === 'red' || message.includes('red flag')) {
-                        return { icon: AlertTriangle, color: 'text-red-500' }
-                      } else if (message.includes('rain') || msg.Category === 'Weather') {
-                        return { icon: CloudRain, color: 'text-blue-400' }
-                      } else if (message.includes('drs')) {
-                        return { icon: Zap, color: 'text-purple-500' }
-                      } else {
-                        return { icon: Info, color: 'text-neutral-400' }
-                      }
-                    }
-                    
-                    const { icon: IconComponent, color } = getMessageIcon()
+                    const messageText = msg.Message || ''
+                    const flagClass = msg.Flag === 'YELLOW' ? 'text-yellow-500' :
+                                      msg.Flag === 'GREEN' ? 'text-green-500' :
+                                      msg.Flag === 'RED' ? 'text-red-500' :
+                                      msg.Flag === 'BLUE' ? 'text-[#0090ff]' :
+                                      'text-neutral-400'
                     
                     return (
-                      <div key={idx} className="relative pl-7 pb-3 last:pb-1">
-                        {/* Timeline line */}
-                        {idx !== state.raceControl.length - 1 && (
-                          <div className="absolute left-[11px] top-5 bottom-0 w-px bg-neutral-800" />
-                        )}
-                        
-                        {/* Icon */}
-                        <div className={`absolute left-0 top-0.5 w-6 h-6 rounded-full bg-neutral-800 flex items-center justify-center ${color}`}>
-                          <IconComponent className="w-3.5 h-3.5" />
-                        </div>
-                        
-                        {/* Content */}
-                        <div className="space-y-1">
-                          {/* Header with flag badge and time */}
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {msg.Flag && (
-                              <Badge 
-                                variant="outline" 
-                                className={`text-[9px] px-1.5 py-0 h-4 font-bold ${
-                                  msg.Flag === 'YELLOW' ? 'border-yellow-500 text-yellow-500 bg-yellow-500/10' :
-                                  msg.Flag === 'GREEN' ? 'border-green-500 text-green-500 bg-green-500/10' :
-                                  msg.Flag === 'RED' ? 'border-red-500 text-red-500 bg-red-500/10' :
-                                  msg.Flag === 'BLUE' ? 'border-blue-500 text-blue-500 bg-blue-500/10' :
-                                  'border-neutral-600 text-neutral-400 bg-neutral-800/50'
-                                }`}
-                              >
-                                {msg.Flag}
-                              </Badge>
-                            )}
-                            <span className="text-[10px] text-neutral-500 font-mono">
-                              {new Date(msg.Utc).toLocaleTimeString('en-US', { 
-                                hour12: true, 
-                                hour: '2-digit', 
-                                minute: '2-digit',
-                                second: '2-digit'
-                              })}
-                            </span>
-                            {msg.Lap && (
-                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-neutral-600 text-neutral-400">
-                                {msg.Lap} Lap
-                              </Badge>
-                            )}
+                      <div key={idx} className="flex gap-2.5 py-1.5 px-2 border-b border-neutral-800/40 last:border-0 hover:bg-neutral-800/20 transition-colors items-start">
+                        <div className="flex-shrink-0 mt-[1px]">
+                          <div className="bg-[#1a1a1a] text-neutral-400 px-1.5 py-0.5 rounded-[3px] border border-neutral-800 text-[11px] font-mono tracking-tight leading-tight">
+                            {new Date(msg.Utc).toLocaleTimeString('en-US', { 
+                              hour12: false, 
+                              hour: '2-digit', 
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}
                           </div>
-                          
-                          {/* Message */}
-                          <div className="bg-neutral-800/30 rounded px-2 py-1.5">
-                            <p className="text-xs text-neutral-200 leading-tight uppercase tracking-wide">
-                              {msg.Message}
-                            </p>
-                            {msg.Sector && (
-                              <p className="text-[10px] text-neutral-500 mt-0.5">
-                                Sector: {msg.Sector}
-                              </p>
+                        </div>
+                        <div className="flex-1 min-w-0 pt-[2px]">
+                          <div className="text-[11px] text-neutral-300 uppercase tracking-wide leading-snug break-words font-medium">
+                            {msg.Flag && (
+                              <span className={`mr-2 font-bold ${flagClass}`}>
+                                {msg.Flag}
+                              </span>
                             )}
+                            {messageText}
                           </div>
                         </div>
                       </div>

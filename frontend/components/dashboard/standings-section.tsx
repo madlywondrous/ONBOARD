@@ -82,7 +82,7 @@ export function StandingsSection() {
         if (cStandings.length > 0) setSelectedConstructorId(cStandings[0].Constructor.constructorId)
         
       } catch (err) {
-        console.error(err)
+        console.warn(err)
         setError("Failed to load championship standings")
       } finally {
         setLoading(false)
